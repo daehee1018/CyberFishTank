@@ -1,51 +1,3 @@
-'''import cv2
-from ultralytics import YOLO
-
-# YOLOv8 모델 로드
-model = YOLO("yolov8n.pt")
-
-# 휴대폰 카메라 스트림 주소
-url = "http://192.168.31.14:8080/video"
-
-cap = cv2.VideoCapture(url)
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    # Object Detection
-    results = model(frame)
-
-    for r in results:
-        boxes = r.boxes
-
-        for box in boxes:
-            # 좌표 추출
-            x1, y1, x2, y2 = box.xyxy[0]
-
-            x1 = int(x1)
-            y1 = int(y1)
-            x2 = int(x2)
-            y2 = int(y2)
-
-            # 중심 좌표
-            cx = int((x1 + x2) / 2)
-            cy = int((y1 + y2) / 2)
-
-            print(f"Object center: ({cx}, {cy})")
-
-            # 화면 표시
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
-            cv2.circle(frame, (cx, cy), 5, (0,0,255), -1)
-
-    cv2.imshow("Object Detection", frame)
-
-    if cv2.waitKey(1) == 27:
-        break
-
-cap.release()
-cv2.destroyAllWindows()'''
 import cv2
 import json
 import csv
@@ -106,6 +58,30 @@ def hist_dist(a: np.ndarray, b: np.ndarray) -> float:
     )
 
 
+def iou(boxA, boxB) -> float:
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+
+    inter_w = max(0, xB - xA)
+    inter_h = max(0, yB - yA)
+    inter = inter_w * inter_h
+
+    areaA = max(0, boxA[2] - boxA[0]) * max(0, boxA[3] - boxA[1])
+    areaB = max(0, boxB[2] - boxB[0]) * max(0, boxB[3] - boxB[1])
+
+    denom = areaA + areaB - inter
+    if denom <= 0:
+        return 0.0
+    return inter / denom
+
+
+def point_in_box(x, y, box) -> bool:
+    x1, y1, x2, y2 = box
+    return x1 <= x <= x2 and y1 <= y <= y2
+
+
 # ---------- Data structure ----------
 @dataclass
 class Track:
@@ -114,9 +90,8 @@ class Track:
     age: int = 0
     missed: int = 0
 
+
 # ---------- YOLO detect ----------
-'''def yolo_detect_ultralytics(model, frame, conf=0.3, cls_filter=None):
-    results = model.predict(frame, conf=conf, verbose=False)'''
 def yolo_detect_ultralytics(model, frame, conf=0.3, cls_filter=None):
     results = model.predict(frame, conf=conf, imgsz=416, verbose=False)
     r = results[0]
@@ -151,7 +126,7 @@ def draw_tracks(frame, tracks: List[Track]):
 
         cv2.putText(
             frame,
-            f"ID {t.tid}",
+            f"TRACKING ID {t.tid}",
             (x1, max(0, y1 - 10)),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
@@ -168,20 +143,91 @@ def draw_tracks(frame, tracks: List[Track]):
             (255, 255, 0),
             2
         )
-
     return frame
 
 
+def draw_candidates(frame, dets):
+    for i, d in enumerate(dets):
+        x1, y1, x2, y2 = [int(v) for v in d["bbox"]]
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 200, 0), 2)
+        cv2.putText(
+            frame,
+            f"candidate {i}",
+            (x1, max(0, y1 - 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 200, 0),
+            2
+        )
+    return frame
+
+
+# ---------- Mouse state ----------
+clicked_point = None
+
+def mouse_callback(event, x, y, flags, param):
+    global clicked_point
+    if event == cv2.EVENT_LBUTTONDOWN:
+        clicked_point = (x, y)
+
+
+def choose_target_by_click(dets, click_xy):
+    if click_xy is None:
+        return None
+
+    for d in dets:
+        if point_in_box(click_xy[0], click_xy[1], d["bbox"]):
+            return d
+    return None
+
+
+def choose_best_match(dets, frame, ref_feat, last_box, dist_thr=80, hist_thr=0.6):
+    if len(dets) == 0:
+        return None
+
+    best_det = None
+    best_score = 1e18
+
+    last_c = center(last_box) if last_box is not None else None
+
+    for d in dets:
+        box = d["bbox"]
+        feat = hsv_hist_feat(frame, box)
+        if feat is None:
+            continue
+
+        hdist = hist_dist(ref_feat, feat) if ref_feat is not None else 0.0
+
+        if last_c is not None:
+            cdist = l2(center(box), last_c)
+            iou_score = iou(box, last_box)
+        else:
+            cdist = 0.0
+            iou_score = 0.0
+
+        # 점수는 낮을수록 좋음
+        score = hdist * 100 + cdist - iou_score * 30
+
+        # 너무 멀고 너무 다르면 후보 제외
+        if last_box is not None and cdist > dist_thr * 4 and hdist > hist_thr:
+            continue
+
+        if score < best_score:
+            best_score = score
+            best_det = d
+
+    return best_det
+
+
 def main():
-    # ---------------- Settings ----------------
+    global clicked_point
+
     model_path = "yolov8n.pt"
-    url = "http://192.168.31.14:8080/video"   # 휴대폰 카메라 주소
+    url = "http://192.168.31.14:8080/video"
 
     conf_thr = 0.3
     max_missed = 30
-
-    species_dist_thr = 0.35
-    species_patience = 8
+    cls_filter = None
 
     save_jsonl = True
     save_csv = True
@@ -190,11 +236,6 @@ def main():
     out_tracks = "tracks.jsonl"
     out_features = "features.csv"
 
-    # 필요 시 특정 클래스만 보고 싶으면 넣기
-    # 예: 사람만 = [0]
-    cls_filter = None
-
-    # ---------------- Load ----------------
     model = YOLO(model_path)
     cap = cv2.VideoCapture(url)
 
@@ -204,13 +245,14 @@ def main():
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 640)
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 480)
 
-    # ---- Single object state ----
+    cv2.namedWindow("Realtime Detection + Tracking")
+    cv2.setMouseCallback("Realtime Detection + Tracking", mouse_callback)
+
     current_id = 1
     ref_feat = None
-    change_count = 0
-
     last_box = None
     missed = 0
+    target_locked = False
 
     last_center_by_id = {}
     total_dist_by_id = {}
@@ -226,63 +268,76 @@ def main():
             print("[WARN] 프레임을 읽지 못함")
             break
 
-        '''# 1) Detection
         dets = yolo_detect_ultralytics(model, frame, conf=conf_thr, cls_filter=cls_filter)
-        '''
-        if fid % 3 == 0:
-            dets = yolo_detect_ultralytics(model, frame, conf=conf_thr, cls_filter=cls_filter)
-        else:
-            dets = []
+
         for d in dets:
             d["bbox"] = clamp_xyxy(d["bbox"], w, h)
 
         if det_f is not None:
             det_f.write(json.dumps({"frame_id": fid, "dets": dets}, ensure_ascii=False) + "\n")
 
-        # 2) 단일 객체 모드: confidence 가장 높은 1개만 사용
-        if len(dets) > 1:
-            dets = [max(dets, key=lambda d: d["conf"])]
-
-        # 3) 현재 박스 결정
         box = None
         real_detection_this_frame = False
 
-        if len(dets) == 1:
-            box = np.array(dets[0]["bbox"], dtype=np.float32)
-            last_box = box
-            missed = 0
-            real_detection_this_frame = True
+        # ---------------- 아직 객체를 선택하지 않은 상태 ----------------
+        if not target_locked:
+            vis = frame.copy()
+            vis = draw_candidates(vis, dets)
+
+            cv2.putText(
+                vis,
+                "Click the object you want to track",
+                (20, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                (0, 255, 255),
+                2
+            )
+
+            chosen = choose_target_by_click(dets, clicked_point)
+            if chosen is not None:
+                box = np.array(chosen["bbox"], dtype=np.float32)
+                ref_feat = hsv_hist_feat(frame, chosen["bbox"])
+                last_box = box
+                missed = 0
+                target_locked = True
+                real_detection_this_frame = True
+                print(f"[INFO] target selected: ID {current_id}")
+                clicked_point = None
+
+            cv2.imshow("Realtime Detection + Tracking", vis)
+
+        # ---------------- 이미 선택한 객체만 추적 ----------------
         else:
-            missed += 1
-            if missed <= max_missed and last_box is not None:
-                box = last_box
-            else:
-                box = None
+            chosen = choose_best_match(
+                dets=dets,
+                frame=frame,
+                ref_feat=ref_feat,
+                last_box=last_box,
+                dist_thr=80,
+                hist_thr=0.7
+            )
 
-        # 4) species(외형) 변화 감지
-        if real_detection_this_frame:
-            feat = hsv_hist_feat(frame, dets[0]["bbox"])
-            if feat is not None:
-                if ref_feat is None:
+            if chosen is not None:
+                box = np.array(chosen["bbox"], dtype=np.float32)
+                feat = hsv_hist_feat(frame, chosen["bbox"])
+                if feat is not None and ref_feat is not None:
+                    ref_feat = 0.9 * ref_feat + 0.1 * feat
+                elif feat is not None:
                     ref_feat = feat
+
+                last_box = box
+                missed = 0
+                real_detection_this_frame = True
+            else:
+                missed += 1
+                if missed <= max_missed and last_box is not None:
+                    box = last_box
                 else:
-                    d = hist_dist(ref_feat, feat)
+                    box = None
 
-                    if d > species_dist_thr:
-                        change_count += 1
-                    else:
-                        change_count = 0
-
-                    if change_count >= species_patience:
-                        old_id = current_id
-                        current_id += 1
-                        ref_feat = feat
-                        change_count = 0
-                        print(f"[INFO] species change at frame {fid}: ID {old_id} -> {current_id}")
-
-        # 5) Track 생성
         tracks: List[Track] = []
-        if box is not None:
+        if box is not None and target_locked:
             tracks = [Track(tid=current_id, box=box, age=fid, missed=missed)]
 
         if trk_f is not None:
@@ -295,26 +350,40 @@ def main():
             }
             trk_f.write(json.dumps(trk_out, ensure_ascii=False) + "\n")
 
-        # 6) 거리 누적
         for t in tracks:
             c = center(t.box)
             if t.tid in last_center_by_id:
                 total_dist_by_id[t.tid] = total_dist_by_id.get(t.tid, 0.0) + l2(last_center_by_id[t.tid], c)
             last_center_by_id[t.tid] = c
-
             print(f"ID {t.tid} center: ({int(c[0])}, {int(c[1])})")
 
-        # 7) 화면 표시
-        vis = draw_tracks(frame.copy(), tracks)
-        cv2.imshow("Realtime Detection + Tracking", vis)
+        if target_locked:
+            vis = draw_tracks(frame.copy(), tracks)
+            cv2.putText(
+                vis,
+                "Tracking selected object only",
+                (20, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                (0, 255, 255),
+                2
+            )
+            cv2.imshow("Realtime Detection + Tracking", vis)
 
         key = cv2.waitKey(1) & 0xFF
         if key == 27:   # ESC
             break
+        elif key == ord('r'):
+            # 다시 선택 모드로 돌아가기
+            target_locked = False
+            ref_feat = None
+            last_box = None
+            missed = 0
+            clicked_point = None
+            print("[INFO] target reset")
 
         fid += 1
 
-    # 종료
     cap.release()
     cv2.destroyAllWindows()
 
