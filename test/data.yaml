@@ -1,0 +1,7 @@
+path: /Users/handh/CyberFishTank/test/dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: fish
