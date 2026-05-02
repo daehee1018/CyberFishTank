@@ -1,0 +1,12 @@
+.venv/
+.venv311/
+
+runs/
+fish_raw/
+fish_dataset/
+
+*.mp4
+*.cache
+
+__pycache__/
+*.pyc
