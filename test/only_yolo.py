@@ -23,10 +23,10 @@ CONF_THR = 0.25
 IMG_SIZE = 1280
 
 DETECT_EVERY = 1
-MAX_LOST = 20
-MIN_HITS = 2
-MAX_MATCH_DIST = 180.0
-MAX_HIST_DIST = 0.90
+MAX_LOST = 100
+MIN_HITS = 1
+MAX_MATCH_DIST = 250.0
+MAX_HIST_DIST = 1.0
 WINDOW_NAME = "Fish Detection + Tracking"
 
 SEND_UDP = False
@@ -183,7 +183,13 @@ def load_model():
     return YOLO(FALLBACK_MODEL)
 
 def detect_fish(model, frame):
-    results = model.predict(frame, conf=CONF_THR, imgsz=IMG_SIZE, verbose=False)
+    results = model.predict(
+    frame,
+    conf=CONF_THR,
+    imgsz=IMG_SIZE,
+    iou=0.4,
+    max_det=1,
+    verbose=False)
     r = results[0]
     dets = []
 
