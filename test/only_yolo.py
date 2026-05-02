@@ -511,6 +511,26 @@ def main():
             clicked_point = None
 
         tracker.set_selected(selected_tid)
+        # selected target 사라졌으면 자동 재지정
+        if selected_tid is not None:
+
+            alive_ids = [
+                t.tid for t in tracker.visible_tracks()
+            ]
+
+            if selected_tid not in alive_ids:
+
+                visible_tracks = tracker.visible_tracks()
+
+                if len(visible_tracks) > 0:
+
+                    # 가장 최근에 생성된 track 선택
+                    selected_tid = visible_tracks[-1].tid
+
+                    print(f"[INFO] target lost -> reassigned to ID {selected_tid}")
+
+                else:
+                    selected_tid = None
 
         vis = frame.copy()
         visible_tracks = tracker.visible_tracks()
