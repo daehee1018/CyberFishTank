@@ -1,5 +1,5 @@
 // src/components/Aquarium.tsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Fish from './Fish';
 
 export default function Aquarium() {
