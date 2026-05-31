@@ -1,10 +1,11 @@
-// server.cjs (이름 변경 완료!)
+// server.cjs - 최종 통합 버전
 const express = require('express');
 const multer = require('multer');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
+const WebSocket = require('ws'); // 웹소켓 라이브러리 추가
 
 const app = express();
 app.use(cors()); 
@@ -26,7 +27,6 @@ app.post('/api/upload-fish', upload.single('fishImage'), (req, res) => {
 
   console.log(`[AI 가동] make_10_fish.py 실행 중...`);
   
-  // 💡 백틱(`) 문법으로 정상 수정 완료. 윈도우 환경이므로 python3 대신 python으로 명령 처리
   exec(`python make_10_fish.py "${inputPath}" "${reactCandidatesDir}"`, (error, stdout, stderr) => {
     if (error) {
       console.error('Python 에러 로그:', stderr);
@@ -50,7 +50,6 @@ app.post('/api/select-style', (req, res) => {
 
   console.log(`[스프라이트 가공] make_8_direction.py 실행 중...`);
 
-  // 💡 백틱(`) 문법으로 정상 수정 완료. 윈도우 환경이므로 python3 대신 python으로 명령 처리
   exec(`python make_8_direction.py "${inputPath}" "${outDir}"`, (error, stdout, stderr) => {
     if (error) {
       console.error('Python 에러 로그:', stderr);
@@ -60,4 +59,26 @@ app.post('/api/select-style', (req, res) => {
   });
 });
 
-app.listen(5000, () => console.log('🚀 백엔드 파이썬 서버가 5000번 포트에서 대기 중입니다.'));
+// 5000번 포트에서 백엔드 대기
+const server = app.listen(5000, () => console.log('🚀 백엔드 파이썬 서버가 5000번 포트에서 대기 중입니다.'));
+
+// 8765번 포트에서 웹소켓 대기 (데이터 스트리밍)
+const wss = new WebSocket.Server({ port: 8765 });
+
+wss.on('connection', (ws) => {
+  console.log('클라이언트와 웹소켓 연결 성공!');
+
+  const interval = setInterval(() => {
+    const data = { 
+        x: Math.random() * 2 - 1, 
+        y: Math.random() * 2 - 1, 
+        color: "#FF5733" 
+    };
+    
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(data));
+    }
+  }, 50);
+
+  ws.on('close', () => clearInterval(interval));
+});
