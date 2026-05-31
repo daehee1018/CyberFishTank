@@ -1,11 +1,20 @@
-import { useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber'; // 💡 추가
+import { useMemo, useRef, useEffect } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
 export function Fish3D({ x, y, color }: { x: number; y: number; color: string }) {
   const { scene } = useGLTF('/Betta.glb');
-  const groupRef = useRef<THREE.Group>(null); // 💡 그룹 참조 추가
+  const groupRef = useRef<THREE.Group>(null);
+  
+  // 💡 [핵심 포인트 1] 목표 좌표를 담아둘 안전한 '상자'를 하나 만듭니다.
+  const targetPos = useRef(new THREE.Vector3(0, 0, 0));
+
+  // 💡 [핵심 포인트 2] 파이썬에서 새 x, y가 도착할 때마다 상자 안의 좌표만 쓱 바꿔줍니다.
+  // (문자열이 섞여 들어올 경우를 대비해 Number()로 확실하게 숫자로 만듭니다)
+  useEffect(() => {
+    targetPos.current.set(Number(x), Number(y), 0);
+  }, [x, y]);
 
   const processedScene = useMemo(() => {
     const clone = scene.clone();
@@ -29,11 +38,10 @@ export function Fish3D({ x, y, color }: { x: number; y: number; color: string })
     return clone;
   }, [scene, color]);
 
-  // 💡 [핵심] useFrame을 사용해 매 프레임마다 부드럽게 좌표 이동
+  // 💡 [핵심 포인트 3] 3D 엔진은 매 프레임마다 상자(targetPos)에 적힌 주소로만 열심히 이동합니다.
   useFrame(() => {
     if (groupRef.current) {
-      // position.lerp를 사용하여 현재 위치에서 [x, y, 0]으로 서서히 이동
-      groupRef.current.position.lerp(new THREE.Vector3(x, y, 0), 0.1);
+      groupRef.current.position.lerp(targetPos.current, 0.1);
     }
   });
 
