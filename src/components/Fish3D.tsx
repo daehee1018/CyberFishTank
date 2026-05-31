@@ -1,14 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber'; // 💡 추가
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
 export function Fish3D({ x, y, color }: { x: number; y: number; color: string }) {
   const { scene } = useGLTF('/Betta.glb');
+  const groupRef = useRef<THREE.Group>(null); // 💡 그룹 참조 추가
 
   const processedScene = useMemo(() => {
     const clone = scene.clone();
-    
-    // 모델의 중심점을 정중앙으로 이동 (카메라가 엉뚱한 곳을 비추는 것 방지)
     const box = new THREE.Box3().setFromObject(clone);
     const center = new THREE.Vector3();
     box.getCenter(center);
@@ -16,7 +16,6 @@ export function Fish3D({ x, y, color }: { x: number; y: number; color: string })
 
     clone.traverse((child: any) => {
       if (child.isMesh) {
-        // 눈 확인: 이름에 'eye'가 있으면 검은색
         if (child.name.toLowerCase().includes('eye')) {
           child.material = new THREE.MeshStandardMaterial({ color: '#000000' });
         } else {
@@ -30,9 +29,16 @@ export function Fish3D({ x, y, color }: { x: number; y: number; color: string })
     return clone;
   }, [scene, color]);
 
-  // 💡 [핵심] Group으로 감싸고 여기서 scale을 0.01로 더 작게 조정했습니다.
+  // 💡 [핵심] useFrame을 사용해 매 프레임마다 부드럽게 좌표 이동
+  useFrame((state, delta) => {
+    if (groupRef.current) {
+      // position.lerp를 사용하여 현재 위치에서 [x, y, 0]으로 서서히 이동
+      groupRef.current.position.lerp(new THREE.Vector3(x, y, 0), 0.1);
+    }
+  });
+
   return (
-    <group position={[x, y, 0]} scale={[0.01, 0.01, 0.01]}>
+    <group ref={groupRef} scale={[0.01, 0.01, 0.01]}>
       <primitive object={processedScene} />
     </group>
   );
