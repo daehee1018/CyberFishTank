@@ -1,0 +1,84 @@
+{
+  "version": "6.1.3",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "fish",
+      "points": [
+        [
+          334.0,
+          91.0
+        ],
+        [
+          448.0,
+          163.0
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    },
+    {
+      "label": "head",
+      "points": [
+        [
+          353.34259259259255,
+          146.08333333333331
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "point",
+      "flags": {},
+      "mask": null
+    },
+    {
+      "label": "dorsal",
+      "points": [
+        [
+          375.56481481481484,
+          155.80555555555554
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "point",
+      "flags": {},
+      "mask": null
+    },
+    {
+      "label": "belly",
+      "points": [
+        [
+          376.4907407407407,
+          134.0462962962963
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "point",
+      "flags": {},
+      "mask": null
+    },
+    {
+      "label": "tail",
+      "points": [
+        [
+          407.0462962962963,
+          142.8425925925926
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "point",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "fish_000405_flipcrop.jpg",
+  "imageData": null,
+  "imageHeight": 720,
+  "imageWidth": 1280
+}

@@ -19,6 +19,62 @@
       "shape_type": "rectangle",
       "flags": {},
       "mask": null
+    },
+    {
+      "label": "head",
+      "points": [
+        [
+          502.82894736842104,
+          12.302631578947398
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "point",
+      "flags": {},
+      "mask": null
+    },
+    {
+      "label": "dorsal",
+      "points": [
+        [
+          448.22368421052636,
+          30.723684210526343
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "point",
+      "flags": {},
+      "mask": null
+    },
+    {
+      "label": "belly",
+      "points": [
+        [
+          463.3552631578947,
+          55.72368421052634
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "point",
+      "flags": {},
+      "mask": null
+    },
+    {
+      "label": "tail",
+      "points": [
+        [
+          421.25,
+          67.56578947368425
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "point",
+      "flags": {},
+      "mask": null
     }
   ],
   "imagePath": "det02_frame_004200.jpg",

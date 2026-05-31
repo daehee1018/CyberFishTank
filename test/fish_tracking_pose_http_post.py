@@ -20,7 +20,7 @@ DETECT_MODEL_PATH = r"C:\Users\jsh14\Desktop\s\runs\detect\fish_real_v2\weights\
 DETECT_FALLBACK_MODEL = "yolov8n.pt"
 
 # 새 YOLO Pose 모델: head/dorsal/tail/belly 추정용
-POSE_MODEL_PATH = r"C:\Users\jsh14\Desktop\CyberFishTank\runs\pose\runs\fish_pose-6\weights\best.pt"
+POSE_MODEL_PATH = r"C:\Users\jsh14\Desktop\CyberFishTank\runs\pose\fish_pose_v2_flip\weights\best.pt"
 POSE_FALLBACK_MODEL = None
 
 VIDEO_SOURCE = 0

@@ -1,0 +1,9 @@
+path: C:\Users\jsh14\Desktop\s\fish_pose_dataset_v2
+train: images/train
+val: images/val
+
+names:
+  0: fish
+
+kpt_shape: [4, 3]
+flip_idx: [0, 1, 2, 3]
