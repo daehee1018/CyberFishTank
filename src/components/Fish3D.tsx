@@ -30,7 +30,7 @@ export function Fish3D({ x, y, color }: { x: number; y: number; color: string })
   }, [scene, color]);
 
   // 💡 [핵심] useFrame을 사용해 매 프레임마다 부드럽게 좌표 이동
-  useFrame((state, delta) => {
+  useFrame(() => {
     if (groupRef.current) {
       // position.lerp를 사용하여 현재 위치에서 [x, y, 0]으로 서서히 이동
       groupRef.current.position.lerp(new THREE.Vector3(x, y, 0), 0.1);
