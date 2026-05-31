@@ -1,0 +1,6 @@
+path: C:\Users\jsh14\Desktop\s\benchmark_02\eval_dataset\detection
+train: images
+val: images
+
+names:
+  0: fish

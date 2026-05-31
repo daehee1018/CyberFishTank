@@ -14,7 +14,7 @@ from ultralytics import YOLO
 # Config
 # =========================================================
 # 기존 Detection 모델: tracking / ID 유지용
-DETECT_MODEL_PATH = r"C:\Users\jsh14\Desktop\s\runs\detect\fish_real\weights\best.pt"
+DETECT_MODEL_PATH = r"C:\Users\jsh14\Desktop\s\runs\detect\fish_real_v2\weights\best.pt"
 DETECT_FALLBACK_MODEL = "yolov8n.pt"
 
 # 새 YOLO Pose 모델: head/dorsal/tail/belly 추정용
@@ -31,7 +31,7 @@ POSE_CONF_THR = 0.25
 IMG_SIZE = 1280
 POSE_IMG_SIZE = 640
 
-DETECT_EVERY = 1
+DETECT_EVERY = 3
 
 # pose는 tracking에 관여하지 않음. selected target의 자세 분석용으로만 주기적으로 실행.
 # FPS 저하가 있으면 5~10으로 올리기.

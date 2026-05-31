@@ -1,0 +1,6 @@
+path: C:\Users\jsh14\Desktop\s\fish_dataset_v2
+train: images/train
+val: images/val
+
+nc: 1
+names: ['fish']
