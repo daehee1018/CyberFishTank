@@ -17,8 +17,11 @@ const Dashboard: React.FC = () => {
     
     socket.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        setFishData(data); // 서버에서 받은 데이터로 상태 업데이트
+        const parsedData = JSON.parse(event.data);
+        
+        console.log("받은 데이터:", parsedData)
+        
+        setFishData(parsedData); // 서버에서 받은 데이터로 상태 업데이트
       } catch (e) {
         console.error("데이터 파싱 에러:", e);
       }
