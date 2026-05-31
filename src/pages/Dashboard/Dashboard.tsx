@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'; // 💡 useEffect, useState 추가
+import React, { useEffect, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useAppContext } from '../../context/AppContext';
@@ -8,8 +8,13 @@ import { Fish3D } from '../../components/Fish3D';
 const Dashboard: React.FC = () => {
   const { isLiveMode, setIsLiveMode } = useAppContext();
   
-  // 1. 실시간으로 위치와 색상을 담을 상태
-  const [fishData, setFishData] = useState({ x: 0, y: 0, color: '#FF5733' });
+  // 💡 1. YOLO 데이터 구조에 맞게 상태 초기값 변경
+  const [fishData, setFishData] = useState({
+    center_norm: [0.5, 0.5],
+    move_direction: 'none',
+    pose_direction: 'none',
+    abnormal: false
+  });
 
   // 2. 컴포넌트가 나타나면 바로 웹소켓 연결
   useEffect(() => {
@@ -51,7 +56,6 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-4">
-      {/* ... (이하 기존 JSX 코드는 동일하게 유지) */}
       <aside className="rounded-[20px] border border-slate-200 bg-white p-4">
         <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
           <div className="space-y-4">
@@ -96,8 +100,8 @@ const Dashboard: React.FC = () => {
                 <Canvas camera={{ position: [0, 0, 15], fov: 45 }} style={{ background: '#0f172a' }}>
                   <ambientLight intensity={0.8} />
                   <directionalLight position={[5, 5, 5]} intensity={1} />
-                  {/* 데이터 연동 완료 */}
-                  <Fish3D x={fishData.x} y={fishData.y} color={fishData.color} />
+                  {/* 💡 3. x, y 각각 넘기던 것을 fishData 통째로 넘기도록 변경 */}
+                  <Fish3D {...fishData} />
                   <OrbitControls makeDefault enableZoom={false} />
                 </Canvas>
               </div>

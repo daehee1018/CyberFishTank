@@ -64,5 +64,36 @@ app.post('/api/update-fish', (req, res) => {
   res.status(200).send('좌표 전송 완료');
 });
 
+// 💡 YOLO에서 날아오는 데이터를 받는 전용 창구
+app.post('/posi', (req, res) => {
+  const yoloData = req.body;
+  
+  // 터미널 출력용
+  console.log("🔥 [YOLO 원본 데이터 도착] 🔥");
+  console.log(JSON.stringify(yoloData, null, 2)); 
+
+  // 배열일 경우 첫 번째 요소 꺼내기
+  const data = Array.isArray(yoloData) ? yoloData[0] : yoloData;
+
+  // ⭐️ [가장 중요한 부분] 브라우저로 보낼 데이터를 새로 세팅합니다!
+  const payload = {
+    center_norm: data?.center_norm || [0.5, 0.5],
+    move_direction: data?.move_direction || "none",
+    pose_direction: data?.pose_direction || "none",
+    state: data?.state || "tracked",
+    abnormal: data?.abnormal || false
+  };
+
+  // ⭐️ 여기서 옛날 데이터({x, y})가 아니라, 위에서 만든 payload를 웹소켓으로 쏩니다!
+  const message = JSON.stringify(payload);
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) { 
+      client.send(message);
+    }
+  });
+
+  res.status(200).send("OK");
+});
+
 // 서버 실행
 server.listen(5000, () => console.log('🚀 서버가 5000번 포트에서 가동 중입니다.'));

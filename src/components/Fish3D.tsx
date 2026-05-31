@@ -1,37 +1,68 @@
-import { useMemo } from 'react';
-import { useGLTF } from '@react-three/drei';
+import { useEffect, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { useGLTF, Center } from '@react-three/drei';
 import * as THREE from 'three';
 
-export function Fish3D({ x, y, color }: { x: number; y: number; color: string }) {
+// 💡 1. 괄호 안에 기본값(= [0.5, 0.5])을 달아주어 데이터가 없어도 에러가 나지 않게 합니다.
+export function Fish3D({ 
+  center_norm = [0.5, 0.5], 
+  move_direction = 'none', 
+  pose_direction = 'none', 
+  abnormal = false 
+}: any) {
   const { scene } = useGLTF('/Betta.glb');
+  const fishRef = useRef<THREE.Group>(null);
+  
+  const targetPos = useRef(new THREE.Vector3(0, 0, 0));
+  const targetQuat = useRef(new THREE.Quaternion()); 
 
-  const processedScene = useMemo(() => {
-    const clone = scene.clone();
-    const box = new THREE.Box3().setFromObject(clone);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    clone.position.sub(center);
+  useEffect(() => {
+    // 💡 2. 혹시라도 데이터가 배열이 아니거나 깨져있을 경우를 대비한 2중 안전장치
+    const safeNorm = (Array.isArray(center_norm) && center_norm.length >= 2) ? center_norm : [0.5, 0.5];
 
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        if (child.name.toLowerCase().includes('eye')) {
-          child.material = new THREE.MeshStandardMaterial({ color: '#000000' });
-        } else {
-          child.material = new THREE.MeshStandardMaterial({
-            color: color,
-            side: THREE.DoubleSide,
-          });
-        }
+    // 안전한 값으로 x, y 좌표 계산
+    const x = (safeNorm[0] - 0.5) * 10;
+    const y = -(safeNorm[1] - 0.5) * 6; 
+    targetPos.current.set(x, y, 0);
+
+    let rotY = 0; 
+    let rotZ = 0; 
+    
+    // 💡 3. 문자열이 아닐 경우를 대비해 안전하게 String으로 묶어줍니다.
+    const dir = String(pose_direction || move_direction || 'none').toLowerCase();
+    
+    if (dir.includes('left')) rotY = -Math.PI / 2; 
+    if (dir.includes('right')) rotY = Math.PI / 2; 
+    if (dir.includes('up')) rotZ = Math.PI / 4;    
+    if (dir.includes('down')) rotZ = -Math.PI / 4; 
+    
+    const euler = new THREE.Euler(0, rotY, rotZ);
+    targetQuat.current.setFromEuler(euler);
+
+    const fishColor = abnormal ? '#FF0000' : '#00A8FF'; 
+    
+    scene.traverse((child: any) => {
+      if (child.isMesh && !child.name.toLowerCase().includes('eye')) {
+        child.material = new THREE.MeshStandardMaterial({ 
+          color: fishColor, 
+          side: THREE.DoubleSide 
+        });
       }
     });
-    return clone;
-  }, [scene, color]);
+  }, [center_norm, pose_direction, move_direction, abnormal, scene]);
 
-  // 💡 [핵심] 복잡한 코드 다 지우고, 파이썬에서 온 x, y를 group의 position에 직접 꽂아줍니다!
-  // 혹시 움직임이 너무 미세해서 안 보이는 걸 방지하기 위해 x, y 값에 배율(* 2)을 살짝 주었습니다.
+  useFrame(() => {
+    if (fishRef.current) {
+      fishRef.current.position.lerp(targetPos.current, 0.05);
+      fishRef.current.quaternion.slerp(targetQuat.current, 0.05);
+    }
+  });
+
   return (
-    <group position={[Number(x) * 2, Number(y) * 2, 0]} scale={[0.01, 0.01, 0.01]}>
-      <primitive object={processedScene} />
+    <group ref={fishRef}>
+      <Center scale={[1, 1, 1]}>
+        <primitive object={scene} />
+      </Center>
     </group>
   );
 }
