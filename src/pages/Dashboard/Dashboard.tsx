@@ -13,7 +13,7 @@ const Dashboard: React.FC = () => {
 
   // 2. 컴포넌트가 나타나면 바로 웹소켓 연결
   useEffect(() => {
-    const socket = new WebSocket('ws://192.168.31.150:8765');
+    const socket = new WebSocket('wss://ggnu.site/ws');
     
     socket.onmessage = (event) => {
       try {
