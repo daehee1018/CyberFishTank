@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import { useAppContext } from '../../context/AppContext';
 import FishSettings from '../../components/FishSettings';
-import { Fish3D } from '../../components/Fish3D';
+import { Fish2D } from '../../components/Fish2D';
+import Aquarium from '../../components/Aquarium';
+//import { Fish3D } from '../../components/Fish3D';
+//import { Canvas } from '@react-three/fiber';
+//import { OrbitControls } from '@react-three/drei';
 
 const Dashboard: React.FC = () => {
   const { isLiveMode, setIsLiveMode } = useAppContext();
@@ -92,18 +94,14 @@ const Dashboard: React.FC = () => {
             </button>
           </div>
 
-          <div className="relative h-[510px] overflow-hidden rounded-[18px] border border-slate-200 bg-slate-950">
+          <div className="relative h-[510px] overflow-hidden rounded-[18px] border border-slate-200 bg-white">
             {isLiveMode ? (
               <img src="http://192.168.31.151:5000/video_feed" className="absolute inset-0 h-full w-full object-cover" />
             ) : (
               <div className="absolute inset-0 z-0">
-                <Canvas camera={{ position: [0, 0, 15], fov: 45 }} style={{ background: '#0f172a' }}>
-                  <ambientLight intensity={0.8} />
-                  <directionalLight position={[5, 5, 5]} intensity={1} />
-                  {/* 💡 3. x, y 각각 넘기던 것을 fishData 통째로 넘기도록 변경 */}
-                  <Fish3D {...fishData} />
-                  <OrbitControls makeDefault enableZoom={false} />
-                </Canvas>
+                <Aquarium showFish={false}>
+                  <Fish2D {...fishData} />
+                </Aquarium>
               </div>
             )}
           </div>
