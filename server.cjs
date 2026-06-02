@@ -12,7 +12,10 @@ app.use(cors());
 app.use(express.json());
 
 // 서버 객체 먼저 생성
-const server = http.createServer(app);
+//const server = http.createServer(app);
+const server = app.listen(5000, '0.0.0.0', () => {
+  console.log('Server running on port 5000');
+});
 
 // 웹소켓 서버 생성 (반드시 서버 객체 생성 후)
 const wss = new WebSocket.Server({ server });
@@ -67,10 +70,6 @@ app.post('/api/update-fish', (req, res) => {
 // 💡 YOLO에서 날아오는 데이터를 받는 전용 창구
 app.post('/posi', (req, res) => {
   const yoloData = req.body;
-  
-  // 터미널 출력용
-  console.log("🔥 [YOLO 원본 데이터 도착] 🔥");
-  console.log(JSON.stringify(yoloData, null, 2)); 
 
   // 배열일 경우 첫 번째 요소 꺼내기
   const data = Array.isArray(yoloData) ? yoloData[0] : yoloData;
@@ -96,4 +95,4 @@ app.post('/posi', (req, res) => {
 });
 
 // 서버 실행
-server.listen(5000, () => console.log('🚀 서버가 5000번 포트에서 가동 중입니다.'));
+server.listen(5000, '0.0.0.0', () => console.log('🚀 서버가 5000번 포트에서 가동 중입니다.'));
