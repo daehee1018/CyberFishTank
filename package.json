@@ -4,9 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "server": "node server.cjs",
-    "start": "concurrently \"npm run dev\" \"npm run server\""
+  "dev": "vite",
+  "build": "tsc && vite build",
+  "server": "fuser -k 5000/tcp || true && node server.cjs",
+  "start": "concurrently \"npm run dev\" \"npm run server\""
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
