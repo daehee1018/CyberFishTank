@@ -30,15 +30,63 @@ interface Alert {
 }
 
 // ======================================================
-// 센서 데이터
-// 서버에서 WebSocket으로 10분마다 전달되는 데이터
+// YOLO / 물고기 데이터
+// ======================================================
+
+export interface FishData {
+  center_norm: number[];
+  move_direction: string;
+  pose_direction: string;
+  state: string;
+  abnormal: boolean;
+}
+
+// ======================================================
+// Python → Node.js → WebSocket → React
+// 센서 원본 데이터
 // ======================================================
 
 export interface SensorData {
-  temperature: number;
+  timestamp: string;
+
+  millis: number;
+
+  temperature_c: number;
+
   ph: number;
+
+  ph_voltage: number;
+
+  tds_ppm: number;
+
+  tds_voltage: number;
+
+  turbidity_voltage: number;
+
+  turbidity_delta: number;
+
+  turbidity_warning: string;
+
+  water_level_detected: string;
+}
+
+// ======================================================
+// 화면에서 사용하는 센서 데이터
+// ======================================================
+
+export interface DisplaySensorData {
+  temperature: number;
+
+  ph: number;
+
   water_level: number;
+
   light: number;
+
+  tds: number;
+
+  turbidity: number;
+
   timestamp: string;
 }
 
@@ -48,18 +96,28 @@ export interface SensorData {
 
 export interface HourlyAverage {
   temperature: number;
+
   ph: number;
+
   water_level: number;
+
   light: number;
+
+  tds: number;
+
+  turbidity: number;
+
   timestamp: string;
+
   sampleCount: number;
 }
 
 // ======================================================
-// AppContext에서 사용할 전체 데이터 타입
+// AppContext 타입
 // ======================================================
 
 interface AppContextType {
+
   // --------------------------------------------------
   // 기본 설정
   // --------------------------------------------------
@@ -112,6 +170,7 @@ interface AppContextType {
   setAutoLightSchedule: (val: boolean) => void;
 
   lightSchedule: LightScheduleItem[];
+
   setLightSchedule: React.Dispatch<
     React.SetStateAction<LightScheduleItem[]>
   >;
@@ -145,23 +204,26 @@ interface AppContextType {
 
   alerts: Alert[];
 
-  // ==================================================
-  // 센서 데이터
-  // ==================================================
+  // --------------------------------------------------
+  // YOLO / 물고기
+  // --------------------------------------------------
 
-  // 가장 최근에 들어온 센서 데이터
+  fishData: FishData;
+
+  // --------------------------------------------------
+  // 센서
+  // --------------------------------------------------
+
   sensorData: SensorData | null;
 
-  // 현재 1시간 동안 모인 10분 데이터
-  sensorHistory: SensorData[];
+  displaySensorData: DisplaySensorData | null;
 
-  // 가장 최근에 계산된 1시간 평균
+  sensorHistory: DisplaySensorData[];
+
   hourlyAverage: HourlyAverage | null;
 
-  // 지금까지 계산된 1시간 평균 목록
   hourlyAverages: HourlyAverage[];
 
-  // WebSocket 연결 상태
   isWebSocketConnected: boolean;
 }
 
@@ -169,22 +231,25 @@ interface AppContextType {
 // Context 생성
 // ======================================================
 
-const AppContext = createContext<AppContextType | undefined>(
-  undefined
-);
+const AppContext =
+  createContext<AppContextType | undefined>(
+    undefined
+  );
 
 // ======================================================
 // AppProvider
 // ======================================================
 
-export const AppProvider: React.FC<{ children: ReactNode }> = ({
-  children,
-}) => {
+export const AppProvider: React.FC<{
+  children: ReactNode;
+}> = ({ children }) => {
+
   // ====================================================
   // 기본 설정
   // ====================================================
 
-  const [isLiveMode, setIsLiveMode] = useState(false);
+  const [isLiveMode, setIsLiveMode] =
+    useState(false);
 
   const [tankName, setTankName] =
     useState('Cyber Fish Tank');
@@ -230,34 +295,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   const [autoLightSchedule, setAutoLightSchedule] =
     useState(true);
 
-  const [lightSchedule, setLightSchedule] = useState<
-    LightScheduleItem[]
-  >([
-    {
-      id: 1,
-      label: '아침',
-      time: '07:00',
-      brightness: 45,
-    },
-    {
-      id: 2,
-      label: '낮',
-      time: '12:00',
-      brightness: 75,
-    },
-    {
-      id: 3,
-      label: '저녁',
-      time: '18:30',
-      brightness: 35,
-    },
-    {
-      id: 4,
-      label: '취침',
-      time: '22:30',
-      brightness: 10,
-    },
-  ]);
+  const [lightSchedule, setLightSchedule] =
+    useState<LightScheduleItem[]>([
+      {
+        id: 1,
+        label: '아침',
+        time: '07:00',
+        brightness: 45,
+      },
+      {
+        id: 2,
+        label: '낮',
+        time: '12:00',
+        brightness: 75,
+      },
+      {
+        id: 3,
+        label: '저녁',
+        time: '18:30',
+        brightness: 35,
+      },
+      {
+        id: 4,
+        label: '취침',
+        time: '22:30',
+        brightness: 10,
+      },
+    ]);
 
   // ====================================================
   // 급여 제어
@@ -325,214 +389,557 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   ];
 
   // ====================================================
-  // 센서 데이터 상태
+  // YOLO / 물고기 데이터
   // ====================================================
 
-  // 가장 최근 센서 데이터
+  const [fishData, setFishData] =
+    useState<FishData>({
+      center_norm: [0.5, 0.5],
+      move_direction: 'none',
+      pose_direction: 'none',
+      state: 'tracked',
+      abnormal: false,
+    });
+
+  // ====================================================
+  // 센서 데이터
+  // ====================================================
+
   const [sensorData, setSensorData] =
     useState<SensorData | null>(null);
 
-  // 현재 1시간 동안의 10분 데이터
-  const [sensorHistory, setSensorHistory] =
-    useState<SensorData[]>([]);
+  const [displaySensorData, setDisplaySensorData] =
+    useState<DisplaySensorData | null>(null);
 
-  // 가장 최근 1시간 평균
+  const [sensorHistory, setSensorHistory] =
+    useState<DisplaySensorData[]>([]);
+
   const [hourlyAverage, setHourlyAverage] =
     useState<HourlyAverage | null>(null);
 
-  // 계산된 모든 1시간 평균
   const [hourlyAverages, setHourlyAverages] =
     useState<HourlyAverage[]>([]);
 
-  // WebSocket 연결 상태
   const [isWebSocketConnected, setIsWebSocketConnected] =
     useState(false);
 
   // ====================================================
-  // WebSocket으로 들어오는 데이터를 임시 저장
+  // 센서 1시간 버퍼
   //
-  // useRef를 사용하는 이유:
-  // 센서 데이터가 들어올 때마다 React를 다시 렌더링하지
-  // 않고 6개의 데이터를 안전하게 모아두기 위해서
+  // 센서가 10분마다 들어온다고 가정
+  //
+  // 6개 = 1시간
   // ====================================================
 
-  const sensorBufferRef = useRef<SensorData[]>([]);
+  const sensorBufferRef =
+    useRef<DisplaySensorData[]>([]);
 
   // ====================================================
-  // WebSocket 연결
+  // WebSocket
+  //
+  // 중요:
+  //
+  // Dashboard에서 연결하지 않는다.
+  //
+  // AppProvider에서 딱 한 번 연결한다.
+  //
+  // 따라서 Dashboard → Records 이동 시에도
+  // WebSocket 연결이 유지된다.
   // ====================================================
 
   useEffect(() => {
-    // Vite 환경변수를 우선 사용
-    // 없으면 localhost:8765 사용
+
     const WS_URL =
       import.meta.env.VITE_WS_URL ||
-      'ws://localhost:8765';
+      'wss://ggnu.site/ws/';
 
-    console.log(
-      'WebSocket 연결 시도:',
-      WS_URL
-    );
+    console.log('');
+    console.log('================================');
+    console.log('🔌 WebSocket 연결 시도');
+    console.log('주소:', WS_URL);
+    console.log('================================');
+    console.log('');
 
-    const socket = new WebSocket(WS_URL);
+    const socket =
+      new WebSocket(WS_URL);
 
-    // --------------------------------------------------
-    // WebSocket 연결 성공
-    // --------------------------------------------------
+    // ==================================================
+    // 연결 성공
+    // ==================================================
 
     socket.onopen = () => {
+
       console.log(
-        'WebSocket 연결 성공'
+        '✅ WebSocket 연결 성공'
+      );
+
+      console.log(
+        '📡 센서 + YOLO 데이터 수신 대기'
       );
 
       setIsWebSocketConnected(true);
     };
 
-    // --------------------------------------------------
-    // 센서 데이터 수신
-    // --------------------------------------------------
+    // ==================================================
+    // 데이터 수신
+    // ==================================================
 
     socket.onmessage = (event) => {
+
       try {
-        const data = JSON.parse(
-          event.data
-        );
 
-        console.log(
-          '센서 데이터 수신:',
-          data
-        );
+        const data =
+          JSON.parse(event.data);
 
-        // ----------------------------------------------
-        // 서버 데이터 확인
-        // ----------------------------------------------
+        // =================================================
+        // 1. YOLO 데이터 확인
+        // =================================================
 
-        if (
-          typeof data.temperature !== 'number' ||
-          typeof data.ph !== 'number' ||
-          typeof data.water_level !== 'number' ||
-          typeof data.light !== 'number'
-        ) {
-          console.error(
-            '센서 데이터 형식이 올바르지 않습니다:',
+        const isYoloData =
+          data.center_norm !== undefined &&
+          data.move_direction !== undefined;
+
+        if (isYoloData) {
+
+          const newFishData: FishData = {
+
+            center_norm:
+              Array.isArray(data.center_norm)
+                ? data.center_norm
+                : [0.5, 0.5],
+
+            move_direction:
+              data.move_direction || 'none',
+
+            pose_direction:
+              data.pose_direction || 'none',
+
+            state:
+              data.state || 'tracked',
+
+            abnormal:
+              Boolean(data.abnormal),
+          };
+
+          setFishData(
+            newFishData
+          );
+
+          console.log(
+            '🐟 YOLO 데이터:',
+            newFishData
+          );
+
+          return;
+        }
+
+        // =================================================
+        // 2. 센서 데이터인지 확인
+        // =================================================
+
+        const isSensorData =
+          data.temperature_c !== undefined ||
+          data.temperature !== undefined ||
+          data.tds_ppm !== undefined ||
+          data.tds !== undefined ||
+          data.ph !== undefined;
+
+        if (!isSensorData) {
+
+          console.log(
+            'ℹ️ 알 수 없는 WebSocket 데이터:',
             data
           );
 
           return;
         }
 
-        // ----------------------------------------------
-        // 센서 데이터 생성
-        // ----------------------------------------------
+        // =================================================
+        // 3. 센서 데이터 변환
+        // =================================================
 
-        const newSensorData: SensorData = {
-          temperature: data.temperature,
-          ph: data.ph,
-          water_level: data.water_level,
-          light: data.light,
-          timestamp:
-            data.timestamp ||
-            new Date().toISOString(),
-        };
+        let newSensorData: SensorData;
 
-        // ----------------------------------------------
-        // 가장 최근 센서값 저장
-        // ----------------------------------------------
+        // -------------------------------------------------
+        // CASE 1
+        // Node.js에서 변환된 데이터
+        //
+        // temperature
+        // tds
+        // -------------------------------------------------
 
-        setSensorData(newSensorData);
+        if (
+          typeof data.temperature === 'number' ||
+          typeof data.tds === 'number'
+        ) {
 
-        // ----------------------------------------------
-        // 10분 데이터 저장
-        // ----------------------------------------------
+          newSensorData = {
 
-        sensorBufferRef.current = [
-          ...sensorBufferRef.current,
-          newSensorData,
-        ];
+            timestamp:
+              data.timestamp ||
+              new Date().toISOString(),
 
-        // 현재 1시간 데이터 표시
-        setSensorHistory(
-          sensorBufferRef.current
+            millis:
+              Number(data.millis || 0),
+
+            temperature_c:
+              Number(
+                data.temperature ??
+                data.temperature_c ??
+                0
+              ),
+
+            ph:
+              Number(data.ph ?? 0),
+
+            ph_voltage:
+              Number(data.ph_voltage ?? 0),
+
+            tds_ppm:
+              Number(
+                data.tds ??
+                data.tds_ppm ??
+                0
+              ),
+
+            tds_voltage:
+              Number(data.tds_voltage ?? 0),
+
+            turbidity_voltage:
+              Number(
+                data.turbidity ??
+                data.turbidity_voltage ??
+                0
+              ),
+
+            turbidity_delta:
+              Number(
+                data.turbidity_delta ??
+                0
+              ),
+
+            turbidity_warning:
+              String(
+                data.turbidity_warning ??
+                ''
+              ),
+
+            water_level_detected:
+              String(
+                data.water_level ??
+                data.water_level_detected ??
+                ''
+              ),
+          };
+
+        }
+
+        // -------------------------------------------------
+        // CASE 2
+        // Python 원본 데이터
+        // -------------------------------------------------
+
+        else {
+
+          if (
+            data.temperature_c === undefined ||
+            data.ph === undefined ||
+            data.tds_ppm === undefined
+          ) {
+
+            console.warn(
+              '⚠️ 센서 데이터 형식 오류:',
+              data
+            );
+
+            return;
+          }
+
+          newSensorData = {
+
+            timestamp:
+              data.timestamp ||
+              new Date().toISOString(),
+
+            millis:
+              Number(
+                data.millis || 0
+              ),
+
+            temperature_c:
+              Number(
+                data.temperature_c
+              ),
+
+            ph:
+              Number(
+                data.ph
+              ),
+
+            ph_voltage:
+              Number(
+                data.ph_voltage || 0
+              ),
+
+            tds_ppm:
+              Number(
+                data.tds_ppm
+              ),
+
+            tds_voltage:
+              Number(
+                data.tds_voltage || 0
+              ),
+
+            turbidity_voltage:
+              Number(
+                data.turbidity_voltage || 0
+              ),
+
+            turbidity_delta:
+              Number(
+                data.turbidity_delta || 0
+              ),
+
+            turbidity_warning:
+              String(
+                data.turbidity_warning ?? ''
+              ),
+
+            water_level_detected:
+              String(
+                data.water_level_detected ?? ''
+              ),
+          };
+        }
+
+        // =================================================
+        // 4. 실제 센서 데이터 저장
+        // =================================================
+
+        setSensorData(
+          newSensorData
         );
 
         console.log(
-          `현재 1시간 데이터: ${sensorBufferRef.current.length}/6`
+          '📡 센서 데이터:',
+          newSensorData
         );
 
-        // ----------------------------------------------
-        // 10분 데이터가 6개가 되면
-        // = 1시간 평균 계산
-        // ----------------------------------------------
+        // =================================================
+        // 5. 기록 그래프용 데이터 생성
+        // =================================================
+
+        const newDisplayData: DisplaySensorData = {
+
+          // 수온
+          temperature:
+            newSensorData.temperature_c,
+
+          // pH
+          ph:
+            newSensorData.ph,
+
+          // 수위
+          //
+          // 현재 센서:
+          // 1 = 감지
+          // 0 = 미감지
+          //
+          water_level:
+            Number(
+              newSensorData.water_level_detected
+            ),
+
+          // 현재 조도 센서는 실제 데이터가 없으므로 0
+          light:
+            0,
+
+          // TDS
+          tds:
+            newSensorData.tds_ppm,
+
+          // 탁도
+          turbidity:
+            newSensorData.turbidity_voltage,
+
+          // timestamp
+          timestamp:
+            newSensorData.timestamp,
+        };
+
+        // =================================================
+        // 6. 최신 데이터 저장
+        // =================================================
+
+        setDisplaySensorData(
+          newDisplayData
+        );
+
+        // =================================================
+        // 7. 1시간 버퍼에 추가
+        // =================================================
+
+        sensorBufferRef.current = [
+          ...sensorBufferRef.current,
+          newDisplayData,
+        ];
+
+        // 현재까지 수집된 데이터 표시
+        setSensorHistory([
+          ...sensorBufferRef.current,
+        ]);
+
+        console.log(
+          `⏱️ 1시간 수집 진행: ` +
+          `${sensorBufferRef.current.length}/6`
+        );
+
+        // =================================================
+        // 8. 6개가 모이면 1시간 평균 계산
+        // =================================================
 
         if (
           sensorBufferRef.current.length >= 6
         ) {
-          const samples =
-            sensorBufferRef.current;
 
-          // 평균 계산
+          const samples =
+            sensorBufferRef.current.slice(
+              0,
+              6
+            );
+
+          // ------------------------------------------------
+          // 평균 계산 함수
+          // ------------------------------------------------
+
+          const average = (
+            values: number[]
+          ) => {
+
+            if (
+              values.length === 0
+            ) {
+              return 0;
+            }
+
+            return (
+              values.reduce(
+                (sum, value) =>
+                  sum + value,
+                0
+              ) / values.length
+            );
+          };
+
+          // ------------------------------------------------
+          // 각 센서 평균
+          // ------------------------------------------------
+
           const avgTemperature =
-            samples.reduce(
-              (sum, item) =>
-                sum + item.temperature,
-              0
-            ) / samples.length;
+            average(
+              samples.map(
+                item =>
+                  item.temperature
+              )
+            );
 
           const avgPh =
-            samples.reduce(
-              (sum, item) =>
-                sum + item.ph,
-              0
-            ) / samples.length;
+            average(
+              samples.map(
+                item =>
+                  item.ph
+              )
+            );
 
           const avgWaterLevel =
-            samples.reduce(
-              (sum, item) =>
-                sum + item.water_level,
-              0
-            ) / samples.length;
+            average(
+              samples.map(
+                item =>
+                  item.water_level
+              )
+            );
 
           const avgLight =
-            samples.reduce(
-              (sum, item) =>
-                sum + item.light,
-              0
-            ) / samples.length;
+            average(
+              samples.map(
+                item =>
+                  item.light
+              )
+            );
 
-          // --------------------------------------------
-          // 평균 데이터 생성
-          // --------------------------------------------
+          const avgTds =
+            average(
+              samples.map(
+                item =>
+                  item.tds
+              )
+            );
+
+          const avgTurbidity =
+            average(
+              samples.map(
+                item =>
+                  item.turbidity
+              )
+            );
+
+          // =================================================
+          // 9. 1시간 평균 데이터
+          // =================================================
 
           const averageData: HourlyAverage = {
-            temperature: Number(
-              avgTemperature.toFixed(2)
-            ),
 
-            ph: Number(
-              avgPh.toFixed(2)
-            ),
+            temperature:
+              Number(
+                avgTemperature.toFixed(2)
+              ),
 
-            water_level: Number(
-              avgWaterLevel.toFixed(2)
-            ),
+            ph:
+              Number(
+                avgPh.toFixed(2)
+              ),
 
-            light: Number(
-              avgLight.toFixed(2)
-            ),
+            water_level:
+              Number(
+                avgWaterLevel.toFixed(2)
+              ),
+
+            light:
+              Number(
+                avgLight.toFixed(2)
+              ),
+
+            tds:
+              Number(
+                avgTds.toFixed(2)
+              ),
+
+            turbidity:
+              Number(
+                avgTurbidity.toFixed(3)
+              ),
 
             timestamp:
-              new Date().toISOString(),
+              samples[
+                samples.length - 1
+              ].timestamp,
 
             sampleCount:
               samples.length,
           };
 
+          // =================================================
+          // 10. 콘솔 출력
+          // =================================================
+
+          console.log('');
           console.log(
             '================================'
           );
 
           console.log(
-            '1시간 평균 계산 완료'
+            '⏱️ 1시간 평균 계산 완료'
           );
 
           console.log(
@@ -542,74 +949,100 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
           console.log(
             '================================'
           );
+          console.log('');
 
-          // --------------------------------------------
-          // 가장 최근 평균 저장
-          // --------------------------------------------
+          // =================================================
+          // 11. 가장 최근 1시간 평균
+          // =================================================
 
           setHourlyAverage(
             averageData
           );
 
-          // --------------------------------------------
-          // 지금까지의 평균 기록에 추가
-          // --------------------------------------------
+          // =================================================
+          // 12. 전체 시간 평균 기록에 추가
+          //
+          // 예:
+          //
+          // 1시간 → 1개
+          // 2시간 → 2개
+          // 3시간 → 3개
+          //
+          // 일주일이면
+          //
+          // 7 × 24 = 168개
+          // =================================================
 
           setHourlyAverages(
-            (prev) => [
+            prev => [
               ...prev,
               averageData,
             ]
           );
 
-          // --------------------------------------------
-          // 다음 1시간을 위해 초기화
-          // --------------------------------------------
+          // =================================================
+          // 13. 다음 1시간 측정 시작
+          // =================================================
 
           sensorBufferRef.current = [];
 
           setSensorHistory([]);
+
+          console.log(
+            '🔄 다음 1시간 측정을 시작합니다.'
+          );
         }
+
       } catch (error) {
+
         console.error(
-          '센서 JSON 데이터 처리 오류:',
+          '❌ WebSocket JSON 처리 오류:',
           error
         );
+
       }
     };
 
-    // --------------------------------------------------
+    // ==================================================
     // WebSocket 오류
-    // --------------------------------------------------
+    // ==================================================
 
     socket.onerror = (error) => {
+
       console.error(
-        'WebSocket 오류:',
+        '❌ WebSocket 오류:',
         error
       );
 
       setIsWebSocketConnected(false);
     };
 
-    // --------------------------------------------------
+    // ==================================================
     // WebSocket 종료
-    // --------------------------------------------------
+    // ==================================================
 
     socket.onclose = () => {
+
       console.log(
-        'WebSocket 연결 종료'
+        '🔌 WebSocket 연결 종료'
       );
 
       setIsWebSocketConnected(false);
     };
 
-    // --------------------------------------------------
-    // 컴포넌트 종료 시 WebSocket 종료
-    // --------------------------------------------------
+    // ==================================================
+    // Provider 종료 시에만 WebSocket 종료
+    // ==================================================
 
     return () => {
+
+      console.log(
+        '🧹 AppProvider 종료 → WebSocket 정리'
+      );
+
       socket.close();
     };
+
   }, []);
 
   // ====================================================
@@ -617,23 +1050,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   // ====================================================
 
   useEffect(() => {
-    if (!controlNotice) return;
 
-    const timer = setTimeout(
-      () => setControlNotice(''),
-      2200
-    );
+    if (!controlNotice) {
+      return;
+    }
 
-    return () =>
+    const timer =
+      setTimeout(
+        () => {
+          setControlNotice('');
+        },
+        2200
+      );
+
+    return () => {
       clearTimeout(timer);
+    };
+
   }, [controlNotice]);
 
   // ====================================================
-  // Context에서 제공할 데이터
+  // Context 값
   // ====================================================
 
   const value: AppContextType = {
+
+    // --------------------------------------------------
     // 기본 설정
+    // --------------------------------------------------
+
     isLiveMode,
     setIsLiveMode,
 
@@ -658,14 +1103,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     controlPin,
     setControlPin,
 
+    // --------------------------------------------------
     // 수온
+    // --------------------------------------------------
+
     targetTemperature,
     setTargetTemperature,
 
     heaterPower,
     setHeaterPower,
 
+    // --------------------------------------------------
     // 조명
+    // --------------------------------------------------
+
     lightPower,
     setLightPower,
 
@@ -678,7 +1129,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     lightSchedule,
     setLightSchedule,
 
+    // --------------------------------------------------
     // 급여
+    // --------------------------------------------------
+
     feedAmount,
     setFeedAmount,
 
@@ -691,18 +1145,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     lastFeedTime,
     setLastFeedTime,
 
+    // --------------------------------------------------
     // 제어 알림
+    // --------------------------------------------------
+
     controlNotice,
     setControlNotice,
 
+    // --------------------------------------------------
     // 시스템 알림
+    // --------------------------------------------------
+
     alerts,
 
-    // 센서 데이터
+    // --------------------------------------------------
+    // YOLO
+    // --------------------------------------------------
+
+    fishData,
+
+    // --------------------------------------------------
+    // 센서
+    // --------------------------------------------------
+
     sensorData,
+
+    displaySensorData,
+
     sensorHistory,
+
     hourlyAverage,
+
     hourlyAverages,
+
     isWebSocketConnected,
   };
 
@@ -711,7 +1186,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   // ====================================================
 
   return (
-    <AppContext.Provider value={value}>
+    <AppContext.Provider
+      value={value}
+    >
       {children}
     </AppContext.Provider>
   );
@@ -722,11 +1199,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
 // ======================================================
 
 export const useAppContext = () => {
-  const context = useContext(
-    AppContext
-  );
 
-  if (context === undefined) {
+  const context =
+    useContext(
+      AppContext
+    );
+
+  if (
+    context === undefined
+  ) {
+
     throw new Error(
       'useAppContext must be used within an AppProvider'
     );
