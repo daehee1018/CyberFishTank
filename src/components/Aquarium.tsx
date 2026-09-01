@@ -1,59 +1,60 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Fish from './Fish';
 
 export default function Aquarium({ children, showFish = true }: { children?: React.ReactNode; showFish?: boolean }) {
-  const [fish, setFish] = useState({ id: 1, x: 50, y: 50, direction: 'E_right' });
+  const [fish, setFish] = useState({ id: 1, x: 50, y: 50, angle: Math.random() * 360 });
+  const currentRef = useRef({ x: 50, y: 50, angle: fish.angle });
+  const targetRef = useRef({ x: 50, y: 50, angle: fish.angle });
 
   useEffect(() => {
-    let currentX = 50;
-    let currentY = 50;
-    let currentAngle = Math.random() * 360;
 
-    const interval = setInterval(() => {
-      // 부드러운 곡선 주행
-      currentAngle += (Math.random() - 0.5) * 90;
-      if (currentX < 20) currentAngle = 0;
-      else if (currentX > 80) currentAngle = 180;
-      if (currentY < 25) currentAngle = 90;
-      else if (currentY > 75) currentAngle = 270;
+    const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+    const lerp = (start: number, end: number, t: number) => start + (end - start) * t;
+    const shortestAngleDiff = (from: number, to: number) => {
+      const diff = ((to - from + 540) % 360) - 180;
+      return diff;
+    };
 
-      currentAngle = (currentAngle + 360) % 360;
-      const speed = 12;
-      const rad = currentAngle * (Math.PI / 180);
-      const targetX = Math.max(10, Math.min(90, currentX + Math.cos(rad) * speed));
-      const targetY = Math.max(20, Math.min(80, currentY + Math.sin(rad) * speed));
+    const setNewTarget = () => {
+      let nextAngle = targetRef.current.angle + (Math.random() - 0.5) * 90;
+      if (currentRef.current.x < 20) nextAngle = 0;
+      else if (currentRef.current.x > 80) nextAngle = 180;
+      if (currentRef.current.y < 25) nextAngle = 90;
+      else if (currentRef.current.y > 75) nextAngle = 270;
+      nextAngle = (nextAngle + 360) % 360;
 
-      const dx = targetX - currentX;
-      const dy = targetY - currentY;
-      let moveAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-      moveAngle = (moveAngle + 360) % 360;
-      
-      const dirIndex = Math.round(moveAngle / 45) % 8;
+      const rad = (nextAngle * Math.PI) / 180;
+      const distance = 14;
+      const nextX = clamp(currentRef.current.x + Math.cos(rad) * distance, 10, 90);
+      const nextY = clamp(currentRef.current.y + Math.sin(rad) * distance, 20, 80);
 
-      // 💡 [핵심 해결 스위치] 원본 사진이 오른쪽을 보고 있었다면 true, 왼쪽이었다면 false
-      const isOriginalFacingRight = true; 
+      targetRef.current = { x: nextX, y: nextY, angle: nextAngle };
+    };
 
-      let nextDir = '';
-      if (isOriginalFacingRight) {
-        const rightFacingMapping = [
-          'W_left', 'NW_up_left', 'N_up', 'NE_up_right', 
-          'E_right', 'SE_down_right', 'S_down', 'SW_down_left' 
-        ];
-        nextDir = rightFacingMapping[dirIndex];
-      } else {
-        const leftFacingMapping = [
-          'E_right', 'SE_down_right', 'S_down', 'SW_down_left', 
-          'W_left', 'NW_up_left', 'N_up', 'NE_up_right'
-        ];
-        nextDir = leftFacingMapping[dirIndex];
-      }
+    let frameId = 0;
+    const animate = () => {
+      const smoothing = 0.05;
+      currentRef.current.x = lerp(currentRef.current.x, targetRef.current.x, smoothing);
+      currentRef.current.y = lerp(currentRef.current.y, targetRef.current.y, smoothing);
 
-      currentX = targetX;
-      currentY = targetY;
-      setFish({ id: 1, x: currentX, y: currentY, direction: nextDir });
-    }, 2000);
+      const angleDiff = shortestAngleDiff(currentRef.current.angle, targetRef.current.angle);
+      currentRef.current.angle = (currentRef.current.angle + angleDiff * smoothing + 360) % 360;
 
-    return () => clearInterval(interval);
+      if (Math.abs(targetRef.current.x - currentRef.current.x) < 0.02) currentRef.current.x = targetRef.current.x;
+      if (Math.abs(targetRef.current.y - currentRef.current.y) < 0.02) currentRef.current.y = targetRef.current.y;
+      if (Math.abs(angleDiff) < 0.5) currentRef.current.angle = targetRef.current.angle;
+
+      setFish({ id: 1, x: currentRef.current.x, y: currentRef.current.y, angle: currentRef.current.angle });
+      frameId = requestAnimationFrame(animate);
+    };
+
+    const interval = setInterval(setNewTarget, 1800);
+    frameId = requestAnimationFrame(animate);
+
+    return () => {
+      clearInterval(interval);
+      cancelAnimationFrame(frameId);
+    };
   }, []);
 
   return (
@@ -154,7 +155,7 @@ export default function Aquarium({ children, showFish = true }: { children?: Rea
 
       {/* 🐟 물고기 렌더링 (Z-index를 높여서 수초 앞/뒤로 자연스럽게 배치) */}
       <div style={{ zIndex: 5, position: 'relative', width: '100%', height: '100%', pointerEvents: 'none' }}>
-        {children ? children : (showFish && <Fish x={fish.x} y={fish.y} direction={fish.direction} />)}
+        {children ? children : (showFish && <Fish x={fish.x} y={fish.y} angle={fish.angle} />)}
       </div>
       
     </div>

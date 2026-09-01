@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../../context/AppContext';
 
 const Records: React.FC = () => {
-  const { alerts } = useAppContext();
+  const {alerts, hourlyAverages, sensorData, isWebSocketConnected,} = useAppContext();
   const recordTabs = ['성장 그래프', '활동량 그래프', '수온 그래프', 'pH 그래프', '수위 그래프', '조도 그래프', '알림'];
   const rangeOptions = ['1일', '1주', '1개월', '1년', '전체', '사용자 지정'];
   
@@ -44,53 +44,71 @@ const Records: React.FC = () => {
     return byRange[activeRange] || byRange['1주'];
   }, [activeRange]);
 
+  // ======================================================
+// WebSocket 1시간 평균 데이터를 그래프용 데이터로 변환
+// ======================================================
+
+const getHourlyDataByRange = (
+  key: 'temperature' | 'ph' | 'water_level' | 'light'
+) => {
+  // 데이터가 없으면 빈 배열
+  if (!hourlyAverages || hourlyAverages.length === 0) {
+    return [];
+  }
+
+  const now = Date.now();
+
+  // 선택한 기간에 따라 필요한 시간 계산
+  const rangeHours: Record<string, number> = {
+    '1일': 24,
+    '1주': 24 * 7,
+    '1개월': 24 * 30,
+    '1년': 24 * 365,
+  };
+
+  let filteredData = hourlyAverages;
+
+  // 전체 / 사용자 지정은 현재 저장된 전체 데이터를 사용
+  if (rangeHours[activeRange]) {
+    const startTime =
+      now - rangeHours[activeRange] * 60 * 60 * 1000;
+
+    filteredData = hourlyAverages.filter((item) => {
+      return (
+        new Date(item.timestamp).getTime() >=
+        startTime
+      );
+    });
+  }
+
+  return filteredData.map((item) => ({
+    label: new Date(item.timestamp).toLocaleTimeString(
+      'ko-KR',
+      {
+        hour: '2-digit',
+        minute: '2-digit',
+      }
+    ),
+    value: item[key],
+    timestamp: item.timestamp,
+  }));
+};
+
   const temperatureData = useMemo(() => {
-    const byRange: Record<string, any[]> = {
-      '1일': [{ label: '00시', value: 24.9 }, { label: '04시', value: 25.1 }, { label: '08시', value: 25.3 }, { label: '12시', value: 25.4 }, { label: '16시', value: 25.6 }, { label: '20시', value: 25.2 }],
-      '1주': [{ label: '월', value: 25.0 }, { label: '화', value: 25.2 }, { label: '수', value: 25.1 }, { label: '목', value: 25.4 }, { label: '금', value: 25.5 }, { label: '토', value: 25.3 }, { label: '일', value: 25.4 }],
-      '1개월': [{ label: '1주', value: 24.8 }, { label: '2주', value: 25.1 }, { label: '3주', value: 25.3 }, { label: '4주', value: 25.4 }, { label: '5주', value: 25.2 }, { label: '6주', value: 25.4 }],
-      '1년': [{ label: '1월', value: 24.1 }, { label: '3월', value: 24.8 }, { label: '5월', value: 25.2 }, { label: '7월', value: 25.9 }, { label: '9월', value: 25.5 }, { label: '12월', value: 24.9 }],
-      '전체': [{ label: '초기', value: 24.0 }, { label: '구간1', value: 24.6 }, { label: '구간2', value: 25.0 }, { label: '구간3', value: 25.3 }, { label: '구간4', value: 25.5 }, { label: '현재', value: 25.4 }],
-      '사용자 지정': [{ label: 'A', value: 25.0 }, { label: 'B', value: 25.1 }, { label: 'C', value: 25.3 }, { label: 'D', value: 25.4 }, { label: 'E', value: 25.5 }, { label: 'F', value: 25.4 }],
-    };
-    return byRange[activeRange] || byRange['1주'];
-  }, [activeRange]);
+  return getHourlyDataByRange('temperature');
+}, [hourlyAverages, activeRange]);
 
   const phData = useMemo(() => {
-    const byRange: Record<string, any[]> = {
-      '1일': [{ label: '00시', value: 6.6 }, { label: '04시', value: 6.7 }, { label: '08시', value: 6.8 }, { label: '12시', value: 6.9 }, { label: '16시', value: 6.8 }, { label: '20시', value: 6.7 }],
-      '1주': [{ label: '월', value: 6.7 }, { label: '화', value: 6.8 }, { label: '수', value: 6.8 }, { label: '목', value: 6.9 }, { label: '금', value: 6.7 }, { label: '토', value: 6.8 }, { label: '일', value: 6.8 }],
-      '1개월': [{ label: '1주', value: 6.6 }, { label: '2주', value: 6.8 }, { label: '3주', value: 6.9 }, { label: '4주', value: 6.8 }, { label: '5주', value: 6.7 }, { label: '6주', value: 6.8 }],
-      '1년': [{ label: '1월', value: 6.4 }, { label: '3월', value: 6.6 }, { label: '5월', value: 6.7 }, { label: '7월', value: 6.9 }, { label: '9월', value: 6.8 }, { label: '12월', value: 6.8 }],
-      '전체': [{ label: '초기', value: 6.3 }, { label: '구간1', value: 6.5 }, { label: '구간2', value: 6.7 }, { label: '구간3', value: 6.8 }, { label: '구간4', value: 6.9 }, { label: '현재', value: 6.8 }],
-      '사용자 지정': [{ label: 'A', value: 6.7 }, { label: 'B', value: 6.8 }, { label: 'C', value: 6.9 }, { label: 'D', value: 6.8 }, { label: 'E', value: 6.8 }, { label: 'F', value: 6.8 }],
-    };
-    return byRange[activeRange] || byRange['1주'];
-  }, [activeRange]);
+  return getHourlyDataByRange('ph');
+}, [hourlyAverages, activeRange]);
 
   const waterLevelData = useMemo(() => {
-    const byRange: Record<string, any[]> = {
-      '1일': [{ label: '00시', value: 84 }, { label: '04시', value: 84 }, { label: '08시', value: 83 }, { label: '12시', value: 82 }, { label: '16시', value: 82 }, { label: '20시', value: 82 }],
-      '1주': [{ label: '월', value: 84 }, { label: '화', value: 83 }, { label: '수', value: 82 }, { label: '목', value: 82 }, { label: '금', value: 81 }, { label: '토', value: 82 }, { label: '일', value: 82 }],
-      '1개월': [{ label: '1주', value: 85 }, { label: '2주', value: 84 }, { label: '3주', value: 83 }, { label: '4주', value: 82 }, { label: '5주', value: 82 }, { label: '6주', value: 82 }],
-      '1년': [{ label: '1월', value: 88 }, { label: '3월', value: 86 }, { label: '5월', value: 84 }, { label: '7월', value: 83 }, { label: '9월', value: 82 }, { label: '12월', value: 82 }],
-      '전체': [{ label: '초기', value: 90 }, { label: '구간1', value: 88 }, { label: '구간2', value: 86 }, { label: '구간3', value: 84 }, { label: '구간4', value: 83 }, { label: '현재', value: 82 }],
-      '사용자 지정': [{ label: 'A', value: 84 }, { label: 'B', value: 83 }, { label: 'C', value: 82 }, { label: 'D', value: 82 }, { label: 'E', value: 82 }, { label: 'F', value: 82 }],
-    };
-    return byRange[activeRange] || byRange['1주'];
-  }, [activeRange]);
+  return getHourlyDataByRange('water_level');
+}, [hourlyAverages, activeRange]);
 
   const lightData = useMemo(() => {
-    const byRange: Record<string, any[]> = {
-      '1일': [{ label: '06시', value: 120 }, { label: '09시', value: 360 }, { label: '12시', value: 420 }, { label: '15시', value: 390 }, { label: '18시', value: 250 }, { label: '21시', value: 90 }],
-      '1주': [{ label: '월', value: 390 }, { label: '화', value: 410 }, { label: '수', value: 420 }, { label: '목', value: 400 }, { label: '금', value: 415 }, { label: '토', value: 430 }, { label: '일', value: 420 }],
-      '1개월': [{ label: '1주', value: 360 }, { label: '2주', value: 390 }, { label: '3주', value: 420 }, { label: '4주', value: 410 }, { label: '5주', value: 405 }, { label: '6주', value: 420 }],
-      '1년': [{ label: '1월', value: 220 }, { label: '3월', value: 280 }, { label: '5월', value: 360 }, { label: '7월', value: 430 }, { label: '9월', value: 390 }, { label: '12월', value: 250 }],
-      '전체': [{ label: '초기', value: 180 }, { label: '구간1', value: 260 }, { label: '구간2', value: 330 }, { label: '구간3', value: 390 }, { label: '구간4', value: 420 }, { label: '현재', value: 420 }],
-      '사용자 지정': [{ label: 'A', value: 350 }, { label: 'B', value: 380 }, { label: 'C', value: 410 }, { label: 'D', value: 420 }, { label: 'E', value: 415 }, { label: 'F', value: 420 }],
-    };
-    return byRange[activeRange] || byRange['1주'];
-  }, [activeRange]);
+  return getHourlyDataByRange('light');
+}, [hourlyAverages, activeRange]);
 
   const alertPriority: Record<string, number> = { 위험: 3, 주의: 2, 정보: 1 };
   const sortedAlerts = [...alerts].sort((a, b) => {
@@ -101,13 +119,177 @@ const Records: React.FC = () => {
     return dateA - dateB;
   });
 
+const getChartMin = (
+  data: any[],
+  defaultMin: number
+) => {
+  if (data.length === 0) {
+    return defaultMin;
+  }
+
+  const min = Math.min(
+    ...data.map((item) => item.value)
+  );
+
+  return min - 0.5;
+};
+
+const getChartMax = (
+  data: any[],
+  defaultMax: number
+) => {
+  if (data.length === 0) {
+    return defaultMax;
+  }
+
+  const max = Math.max(
+    ...data.map((item) => item.value)
+  );
+
+  return max + 0.5;
+};
+
   const lineChartConfig: Record<string, any> = {
-    '성장 그래프': { subtitle: '물고기 성장 기록', title: '성장 그래프', unit: '길이 변화(cm)', badge: activeRange, currentValue: `${growthData[growthData.length - 1]?.value ?? '-'} cm`, data: growthData, min: Math.min(...growthData.map((d) => d.value)) - 0.5, max: Math.max(...growthData.map((d) => d.value)) + 0.5, color: '#0f172a', valueSuffix: 'cm' },
-    '수온 그래프': { subtitle: '수온 기록', title: '수온 그래프', unit: '수온(°C)', badge: activeRange, currentValue: `${temperatureData[temperatureData.length - 1]?.value ?? '-'}°C`, data: temperatureData, min: 24, max: 26.5, color: '#2563eb', valueSuffix: '°C' },
-    'pH 그래프': { subtitle: 'pH 기록', title: 'pH 그래프', unit: 'pH 변화', badge: activeRange, currentValue: `${phData[phData.length - 1]?.value ?? '-'}`, data: phData, min: 6.2, max: 7.2, color: '#0f766e', valueSuffix: '' },
-    '수위 그래프': { subtitle: '수위 기록', title: '수위 그래프', unit: '수위(%)', badge: activeRange, currentValue: `${waterLevelData[waterLevelData.length - 1]?.value ?? '-'}%`, data: waterLevelData, min: 78, max: 90, color: '#7c3aed', valueSuffix: '%' },
-    '조도 그래프': { subtitle: '조도 기록', title: '조도 그래프', unit: '조도(lx)', badge: activeRange, currentValue: `${lightData[lightData.length - 1]?.value ?? '-'} lx`, data: lightData, min: 0, max: 500, color: '#d97706', valueSuffix: ' lx' },
-  };
+  '성장 그래프': {
+    subtitle: '물고기 성장 기록',
+    title: '성장 그래프',
+    unit: '길이 변화(cm)',
+    badge: activeRange,
+    currentValue:
+      `${growthData[growthData.length - 1]?.value ?? '-'} cm`,
+    data: growthData,
+    min:
+      Math.min(
+        ...growthData.map((d) => d.value)
+      ) - 0.5,
+    max:
+      Math.max(
+        ...growthData.map((d) => d.value)
+      ) + 0.5,
+    color: '#0f172a',
+    valueSuffix: 'cm',
+  },
+
+  // ================================================
+  // 실제 WebSocket 데이터
+  // ================================================
+
+  '수온 그래프': {
+    subtitle: '수온 기록',
+    title: '수온 그래프',
+    unit: '수온(°C)',
+    badge: activeRange,
+
+    currentValue:
+      temperatureData.length > 0
+        ? `${temperatureData[temperatureData.length - 1].value}°C`
+        : sensorData
+          ? `${sensorData.temperature}°C`
+          : '-',
+
+    data: temperatureData,
+
+    min: getChartMin(
+      temperatureData,
+      24
+    ),
+
+    max: getChartMax(
+      temperatureData,
+      26.5
+    ),
+
+    color: '#2563eb',
+    valueSuffix: '°C',
+  },
+
+  'pH 그래프': {
+    subtitle: 'pH 기록',
+    title: 'pH 그래프',
+    unit: 'pH 변화',
+    badge: activeRange,
+
+    currentValue:
+      phData.length > 0
+        ? `${phData[phData.length - 1].value}`
+        : sensorData
+          ? `${sensorData.ph}`
+          : '-',
+
+    data: phData,
+
+    min: getChartMin(
+      phData,
+      6.2
+    ),
+
+    max: getChartMax(
+      phData,
+      7.2
+    ),
+
+    color: '#0f766e',
+    valueSuffix: '',
+  },
+
+  '수위 그래프': {
+    subtitle: '수위 기록',
+    title: '수위 그래프',
+    unit: '수위(%)',
+    badge: activeRange,
+
+    currentValue:
+      waterLevelData.length > 0
+        ? `${waterLevelData[waterLevelData.length - 1].value}%`
+        : sensorData
+          ? `${sensorData.water_level}%`
+          : '-',
+
+    data: waterLevelData,
+
+    min: getChartMin(
+      waterLevelData,
+      78
+    ),
+
+    max: getChartMax(
+      waterLevelData,
+      90
+    ),
+
+    color: '#7c3aed',
+    valueSuffix: '%',
+  },
+
+  '조도 그래프': {
+    subtitle: '조도 기록',
+    title: '조도 그래프',
+    unit: '조도(lx)',
+    badge: activeRange,
+
+    currentValue:
+      lightData.length > 0
+        ? `${lightData[lightData.length - 1].value} lx`
+        : sensorData
+          ? `${sensorData.light} lx`
+          : '-',
+
+    data: lightData,
+
+    min: getChartMin(
+      lightData,
+      0
+    ),
+
+    max: getChartMax(
+      lightData,
+      500
+    ),
+
+    color: '#d97706',
+    valueSuffix: ' lx',
+  },
+};
 
   const renderRangeButtons = () => (
     <div className="mb-4 flex flex-wrap gap-2">
