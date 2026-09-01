@@ -1,4 +1,4 @@
-import { SensorData } from "../types/sensor";
+import type { SensorData } from "../types/sensor";
 
 const WS_URL = "ws://192.168.31.150";
 
