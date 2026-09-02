@@ -1,45 +1,162 @@
 from PIL import Image
 import os
+import sys
+
 
 def generate_8_directions(input_path, output_dir):
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    print(f"[{input_path}] 이미지를 불러옵니다. (오른쪽을 바라보는 물고기 기준)")
-    
-    # 1. 동쪽 (원본 이미지 = 오른쪽을 봄)
+    print(f"[Fish Generator] 입력 이미지: {input_path}")
+
     right_img = Image.open(input_path).convert("RGBA")
-    right_img.save(os.path.join(output_dir, "fish_right.png"))
 
-    # 2. 서쪽 (오른쪽을 좌우 반전 = 왼쪽을 봄)
-    left_img = right_img.transpose(Image.FLIP_LEFT_RIGHT)
-    left_img.save(os.path.join(output_dir, "fish_left.png"))
+    # ------------------------------------------------------------
+    # 기존 이미지 크기를 유지하기 위해
+    # 모든 이미지가 같은 크기를 갖도록 처리
+    # ------------------------------------------------------------
 
-    # 3. 북동쪽 (오른쪽을 반시계방향 45도 회전)
-    right_img.rotate(45, expand=True).save(os.path.join(output_dir, "fish_right_up.png"))
+    width, height = right_img.size
 
-    # 4. 남동쪽 (오른쪽을 시계방향 45도 회전)
-    right_img.rotate(-45, expand=True).save(os.path.join(output_dir, "fish_right_down.png"))
+    # ------------------------------------------------------------
+    # 오른쪽
+    # ------------------------------------------------------------
 
-    # 5. 북서쪽 (왼쪽을 시계방향 45도 회전)
-    left_img.rotate(-45, expand=True).save(os.path.join(output_dir, "fish_left_up.png"))
+    right_img.save(
+        os.path.join(output_dir, "fish_right.png")
+    )
 
-    # 6. 남서쪽 (왼쪽을 반시계방향 45도 회전)
-    left_img.rotate(45, expand=True).save(os.path.join(output_dir, "fish_left_down.png"))
+    # ------------------------------------------------------------
+    # 왼쪽
+    # ------------------------------------------------------------
 
-    # 7. 북쪽 (오른쪽을 반시계방향 90도 회전)
-    right_img.rotate(90, expand=True).save(os.path.join(output_dir, "fish_up.png"))
+    left_img = right_img.transpose(
+        Image.Transpose.FLIP_LEFT_RIGHT
+    )
 
-    # 8. 남쪽 (오른쪽을 시계방향 90도 회전)
-    right_img.rotate(-90, expand=True).save(os.path.join(output_dir, "fish_down.png"))
+    left_img.save(
+        os.path.join(output_dir, "fish_left.png")
+    )
 
-    print(f"🎉 8방향 이미지 방향 수정 완료! [{output_dir}] 폴더를 확인하세요.")
+    # ------------------------------------------------------------
+    # 오른쪽 위
+    # ------------------------------------------------------------
+
+    right_up = right_img.rotate(
+        45,
+        expand=False,
+        resample=Image.Resampling.BICUBIC
+    )
+
+    right_up.save(
+        os.path.join(output_dir, "fish_right_up.png")
+    )
+
+    # ------------------------------------------------------------
+    # 오른쪽 아래
+    # ------------------------------------------------------------
+
+    right_down = right_img.rotate(
+        -45,
+        expand=False,
+        resample=Image.Resampling.BICUBIC
+    )
+
+    right_down.save(
+        os.path.join(output_dir, "fish_right_down.png")
+    )
+
+    # ------------------------------------------------------------
+    # 왼쪽 위
+    # ------------------------------------------------------------
+
+    left_up = left_img.rotate(
+        -45,
+        expand=False,
+        resample=Image.Resampling.BICUBIC
+    )
+
+    left_up.save(
+        os.path.join(output_dir, "fish_left_up.png")
+    )
+
+    # ------------------------------------------------------------
+    # 왼쪽 아래
+    # ------------------------------------------------------------
+
+    left_down = left_img.rotate(
+        45,
+        expand=False,
+        resample=Image.Resampling.BICUBIC
+    )
+
+    left_down.save(
+        os.path.join(output_dir, "fish_left_down.png")
+    )
+
+    # ------------------------------------------------------------
+    # 위
+    # ------------------------------------------------------------
+
+    up = right_img.rotate(
+        90,
+        expand=False,
+        resample=Image.Resampling.BICUBIC
+    )
+
+    up.save(
+        os.path.join(output_dir, "fish_up.png")
+    )
+
+    # ------------------------------------------------------------
+    # 아래
+    # ------------------------------------------------------------
+
+    down = right_img.rotate(
+        -90,
+        expand=False,
+        resample=Image.Resampling.BICUBIC
+    )
+
+    down.save(
+        os.path.join(output_dir, "fish_down.png")
+    )
+
+    print("[Fish Generator] 8방향 이미지 생성 완료")
+
 
 if __name__ == "__main__":
-    INPUT_FILE = "base_fish.png" 
-    OUTPUT_FOLDER = "public/fish_sprites" 
-    
-    if os.path.exists(INPUT_FILE):
-        generate_8_directions(INPUT_FILE, OUTPUT_FOLDER)
+
+    # ------------------------------------------------------------
+    # Node.js에서 실행할 경우
+    #
+    # python generate_fish.py 입력이미지 출력폴더
+    # ------------------------------------------------------------
+
+    if len(sys.argv) >= 3:
+
+        input_file = sys.argv[1]
+        output_folder = sys.argv[2]
+
     else:
-        print(f"에러: {INPUT_FILE} 파일을 찾을 수 없습니다.")
+
+        # 직접 Python 실행할 때 기본값
+        input_file = "base_fish.png"
+        output_folder = "public/fish_sprites"
+
+
+    if not os.path.exists(input_file):
+
+        print(
+            f"[Fish Generator] 에러: "
+            f"{input_file} 파일을 찾을 수 없습니다."
+        )
+
+        sys.exit(1)
+
+
+    generate_8_directions(
+        input_file,
+        output_folder
+    )

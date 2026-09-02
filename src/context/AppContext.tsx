@@ -37,6 +37,8 @@ export interface FishData {
   center_norm: number[];
   move_direction: string;
   pose_direction: string;
+  head: number[];
+  tail: number[];
   state: string;
   abnormal: boolean;
 }
@@ -397,6 +399,8 @@ export const AppProvider: React.FC<{
       center_norm: [0.5, 0.5],
       move_direction: 'none',
       pose_direction: 'none',
+      head: [0.5, 0.5],
+      tail: [0.5, 0.5],
       state: 'tracked',
       abnormal: false,
     });
@@ -496,8 +500,10 @@ export const AppProvider: React.FC<{
         // =================================================
 
         const isYoloData =
-          data.center_norm !== undefined &&
-          data.move_direction !== undefined;
+          data.center_norm !== undefined ||
+          data.move_direction !== undefined ||
+          data.head !== undefined ||
+          data.tail !== undefined;
 
         if (isYoloData) {
 
@@ -514,6 +520,16 @@ export const AppProvider: React.FC<{
             pose_direction:
               data.pose_direction || 'none',
 
+            head:
+              Array.isArray(data.keypoints?.head)
+                ? data.keypoints.head
+                : [0.5, 0.5],
+
+            tail:
+              Array.isArray(data.keypoints?.tail)
+                ? data.keypoints.tail
+                : [0.5, 0.5],
+
             state:
               data.state || 'tracked',
 
@@ -522,11 +538,6 @@ export const AppProvider: React.FC<{
           };
 
           setFishData(
-            newFishData
-          );
-
-          console.log(
-            '🐟 YOLO 데이터:',
             newFishData
           );
 

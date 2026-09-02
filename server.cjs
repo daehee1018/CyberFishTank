@@ -15,6 +15,24 @@ app.use(express.json());
 
 
 // ============================================================
+// 센서 온도 보정 설정
+//
+// 현재 온도 센서가 실제 온도보다 약 4°C 높게 측정됨
+//
+// 예:
+//   센서 원본 29°C
+//        ↓
+//   -4°C 보정
+//        ↓
+//   실제 저장값 25°C
+//
+// 이 값만 변경하면 보정값을 쉽게 조절할 수 있음.
+// ============================================================
+
+const TEMPERATURE_OFFSET = -4;
+
+
+// ============================================================
 // SQLite 데이터베이스
 // ============================================================
 
@@ -133,7 +151,6 @@ wss.on('connection', (ws) => {
 // ============================================================
 
 app.use(
-  '/public',
   express.static(
     path.join(__dirname, 'public')
   )
@@ -172,7 +189,6 @@ app.post(
         'fish_10_candidates'
       );
 
-
     if (!fs.existsSync(reactCandidatesDir)) {
 
       fs.mkdirSync(
@@ -184,9 +200,8 @@ app.post(
 
     }
 
-
     exec(
-      `python make_10_fish.py "${inputPath}" "${reactCandidatesDir}"`,
+      `/usr/bin/python3 make_10_fish.py "${inputPath}" "${reactCandidatesDir}"`,
       (error, stdout, stderr) => {
 
         if (error) {
@@ -199,18 +214,14 @@ app.post(
 
         }
 
+        console.log(stdout);
 
-        const files =
-          fs.readdirSync(
-            reactCandidatesDir
-          ).filter(
-            f => f.endsWith('.png')
-          );
-
-
-        res.json({
+        return res.json({
           success: true,
-          candidates: files
+          candidates:
+            fs.readdirSync(
+              reactCandidatesDir
+            )
         });
 
       }
@@ -232,6 +243,13 @@ app.post(
       selectedStyle
     } = req.body;
 
+    if (!selectedStyle) {
+
+      return res.status(400).json({
+        error: '선택된 스타일이 없습니다.'
+      });
+
+    }
 
     const inputPath =
       path.join(
@@ -241,15 +259,21 @@ app.post(
         selectedStyle
       );
 
-
     const outDir =
       path.join(
         __dirname,
         'public',
-        'assets',
-        'fish'
+        'fish_sprites'
       );
 
+    if (!fs.existsSync(inputPath)) {
+
+      return res.status(404).json({
+        error:
+          '선택한 물고기 이미지를 찾을 수 없습니다.'
+      });
+
+    }
 
     if (!fs.existsSync(outDir)) {
 
@@ -262,9 +286,8 @@ app.post(
 
     }
 
-
     exec(
-      `python make_8_direction.py "${inputPath}" "${outDir}"`,
+      `/usr/bin/python3 generate_fish.py "${inputPath}" "${outDir}"`,
       (error, stdout, stderr) => {
 
         if (error) {
@@ -277,8 +300,9 @@ app.post(
 
         }
 
+        console.log(stdout);
 
-        res.json({
+        return res.json({
           success: true
         });
 
@@ -343,7 +367,8 @@ app.post(
 //   10분이 지나면 가장 최근 센서 데이터를 저장
 // ============================================================
 
-const SENSOR_SAVE_INTERVAL = 10 * 60 * 1000;
+const SENSOR_SAVE_INTERVAL =
+  10 * 60 * 1000;
 
 
 // 마지막으로 DB에 저장한 시간
@@ -423,6 +448,37 @@ const insertSensorData =
 
 function normalizeSensorData(data) {
 
+  // ----------------------------------------------------------
+  // 원본 온도
+  //
+  // 센서가 temperature_c 또는 temperature 중
+  // 하나를 보내는 구조를 모두 지원
+  // ----------------------------------------------------------
+
+  const rawTemperature =
+    Number(
+      data.temperature_c ??
+      data.temperature ??
+      0
+    );
+
+
+  // ----------------------------------------------------------
+  // 온도 보정
+  //
+  // 현재 센서가 실제보다 약 4°C 높으므로
+  // -4°C를 적용
+  // ----------------------------------------------------------
+
+  const correctedTemperature =
+    rawTemperature +
+    TEMPERATURE_OFFSET;
+
+
+  // ----------------------------------------------------------
+  // 센서 데이터 반환
+  // ----------------------------------------------------------
+
   return {
 
     timestamp:
@@ -435,11 +491,7 @@ function normalizeSensorData(data) {
       ),
 
     temperature:
-      Number(
-        data.temperature_c ??
-        data.temperature ??
-        0
-      ),
+      correctedTemperature,
 
     ph:
       Number(
@@ -511,13 +563,19 @@ function saveSensorData(data) {
 
 
     console.log('');
-    console.log('💾 센서 데이터 DB 저장');
+
+    console.log(
+      '💾 센서 데이터 DB 저장'
+    );
+
     console.log(
       `   ID: ${result.lastInsertRowid}`
     );
+
     console.log(
       `   수온: ${data.temperature}°C`
     );
+
     console.log(
       `   pH: ${data.ph}`
     );
@@ -560,6 +618,8 @@ function saveSensorData(data) {
 //   ↓
 // Node.js
 //   ↓
+// 온도 -4°C 보정
+//   ↓
 // 최신 데이터 임시 보관
 //   ↓
 // 10분마다 DB 저장
@@ -580,14 +640,19 @@ app.post(
 
 
       // --------------------------------------------------------
-      // 서버에는 센서 데이터가 들어왔다는 것만 표시
+      // 서버에는 보정된 센서 데이터 표시
       // --------------------------------------------------------
 
       console.log('');
-      console.log('📡 센서 데이터 수신');
+
+      console.log(
+        '📡 센서 데이터 수신'
+      );
+
       console.log(
         `   수온: ${sensorData.temperature}°C`
       );
+
       console.log(
         `   pH: ${sensorData.ph}`
       );
@@ -1168,8 +1233,9 @@ app.post(
     const payload = {
 
       center_norm:
-        data?.center_norm ||
-        [0.5, 0.5],
+        Array.isArray(data?.center_norm)
+          ? data.center_norm
+          : [0.5, 0.5],
 
       move_direction:
         data?.move_direction ||
@@ -1179,13 +1245,22 @@ app.post(
         data?.pose_direction ||
         'none',
 
+      head:
+        Array.isArray(data?.keypoints?.head)
+          ? data.keypoints.head
+          : [0.5, 0.5],
+
+      tail:
+        Array.isArray(data?.keypoints?.tail)
+          ? data.keypoints.tail
+          : [0.5, 0.5],
+
       state:
         data?.state ||
         'tracked',
 
       abnormal:
-        data?.abnormal ||
-        false
+        Boolean(data?.abnormal)
 
     };
 
@@ -1298,9 +1373,13 @@ server.listen(
     );
 
     console.log(
-      'YOLO       : WebSocket'
+      'Temperature: -4°C 보정 적용'
     );
 
+    console.log(
+      'YOLO       : WebSocket'
+    );
+    
     console.log(
       '============================================'
     );
