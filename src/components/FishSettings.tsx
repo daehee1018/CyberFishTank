@@ -366,7 +366,7 @@ export default function FishSettings() {
                 <img
                   src={`/fish_10_candidates/${style}`}
                   alt={style}
-                  className="w-full h-auto aspect-square object-contain mb-2 rounded-[6px]"
+                  className="w-full aspect-square object-contain mb-2 rounded-[6px]"
                 />
 
 

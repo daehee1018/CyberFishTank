@@ -29,6 +29,29 @@ const RemoteControl: React.FC = () => {
     setLightSchedule((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: field === 'brightness' ? Number(value) : value } : item)));
   };
 
+  const handleFeed = async () => {
+    try {
+      const response = await fetch('/api/feed', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || '먹이 급여에 실패했습니다.');
+      }
+
+      setLastFeedTime('방금 전');
+      setControlNotice(`${feedAmount} 급여가 실행되었습니다.`);
+    } catch (error) {
+      console.error('[FEED] 먹이 급여 오류:', error);
+      setControlNotice('먹이 급여에 실패했습니다.');
+    }
+  };
+
   const renderTemperatureControl = () => (
     <div className="rounded-[20px] border border-slate-200 bg-white p-5">
       <div className="mb-4 flex items-center justify-between">
@@ -209,10 +232,7 @@ const RemoteControl: React.FC = () => {
           </div>
           <div className="mt-6 rounded-[14px] border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">선택된 급여량: <span className="font-semibold text-slate-900">{feedAmount}</span></div>
           <button
-            onClick={() => {
-              setLastFeedTime('방금 전');
-              setControlNotice(`${feedAmount} 급여가 실행되었습니다.`);
-            }}
+            onClick={handleFeed}
             className="mt-6 w-full rounded-[14px] bg-slate-900 px-4 py-3 text-sm font-medium text-white"
           >
             지금 급여하기

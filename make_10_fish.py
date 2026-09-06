@@ -1,95 +1,529 @@
 import os
 import sys
-import shutil
+import json
+import uuid
+import time
+import random
+import io
+
+import requests
 import cv2
 import numpy as np
-
-from PIL import Image, ImageEnhance, ImageFilter
-from rembg import remove
+from PIL import Image
+from rembg import remove, new_session
 
 
 # ============================================================
 # 설정
 # ============================================================
 
-CANVAS_SIZE = 640
+CANVAS_WIDTH = 1536
+CANVAS_HEIGHT = 1024
 MARGIN = 45
 
-# 후보 이름
+COMFY_URL = os.getenv("COMFY_URL", "http://127.0.0.1:8188")
+
+WORKFLOW_PATH = os.getenv(
+    "FISH_WORKFLOW",
+    os.path.join(os.path.dirname(__file__), "fish_img2img_api.json")
+)
+
+INPUT_PATH = sys.argv[1] if len(sys.argv) > 1 else "base_fish.png"
+OUT_DIR = sys.argv[2] if len(sys.argv) > 2 else "fish_10_candidates"
+
+# 기존에 성공했던 값
+STEPS = 20
+CFG = 8
+DENOISE_HIGH = 0.55
+DENOISE_PIXEL = 0.58
+
 STYLES = [
-    ("01_natural", "Natural"),
-    ("02_vivid", "Vivid"),
-    ("03_ocean_blue", "Ocean Blue"),
-    ("04_crimson", "Crimson"),
-    ("05_golden", "Golden"),
-    ("06_galaxy", "Galaxy"),
-    ("07_koi", "Koi"),
-    ("08_pastel", "Pastel"),
-    ("09_deep_sea", "Deep Sea"),
-    ("10_cartoon", "Soft Cartoon"),
+    ("01_classic", "Classic Betta", "high_quality"),
+    ("02_halfmoon", "Halfmoon Betta", "high_quality"),
+    ("03_fantasy", "Fantasy Betta", "high_quality"),
+
+    ("04_lowpoly_angular", "Low Poly Angular", "lowpoly"),
+    ("05_lowpoly_faceted", "Low Poly Faceted", "lowpoly"),
+
+    ("06_pixel_classic", "Pixel Classic Betta", "pixel"),
+    ("07_pixel_long_fin", "Pixel Long Fin Betta", "pixel"),
+    ("08_pixel_crowntail", "Pixel Crowntail Betta", "pixel"),
+
+    ("09_silhouette", "Silhouette Vector", "silhouette"),
+    ("10_silhouette_fin", "Silhouette Vector Fin", "silhouette"),
 ]
 
 
 # ============================================================
-# 입력 인자
+# 프롬프트
 # ============================================================
 
-INPUT_PATH = (
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else "base_fish.png"
-)
+def build_prompt(style_name, style_type):
 
-OUT_DIR = (
-    sys.argv[2]
-    if len(sys.argv) > 2
-    else "fish_10_candidates"
-)
+    # --------------------------------------------------------
+    # 고품질 2D
+    # --------------------------------------------------------
+    if style_type == "high_quality":
+
+        common = """
+Clean high-quality 2D betta fish game asset based on input image reference.
+Clean side-view profile, entire fish inside frame, transparent background.
+
+BODY PROPORTIONS:
+Longer horizontal body proportion, slightly thicker torso.
+The main body is the dominant visual mass with low vertical height.
+Keep head shape and eye position aligned with input image reference.
+
+FINS & TAIL:
+Short compact dorsal fin, short compact anal fin.
+Fins stay close to the body, occupying a small portion of the silhouette.
+Moderate neat tail size.
+
+STYLE:
+Polished 2D game asset, clean digital illustration style.
+"""
+
+        style_prompt = {
+            "Classic Betta": """
+Classic betta appearance.
+Natural compact fins and moderately sized tail.
+Strong horizontal body emphasis.
+""",
+
+            "Halfmoon Betta": """
+Halfmoon-inspired appearance.
+Rounded fan-shaped tail.
+Short dorsal and anal fins with substantial body length.
+""",
+
+            "Fantasy Betta": """
+Fantasy-inspired appearance.
+Vibrant decorative colors and subtle magical accents.
+Compact fins with dominant body proportions.
+"""
+        }
+
+        return common + style_prompt.get(style_name, "")
+
+    # --------------------------------------------------------
+    # Low Poly
+    # --------------------------------------------------------
+    elif style_type == "lowpoly":
+
+        common = """
+Stylized low-poly betta fish game asset based on input image reference.
+Clean side-view profile, entire fish inside frame, transparent background.
+
+BODY PROPORTIONS:
+Longer horizontal body, slightly thicker torso.
+Low vertical height, dominant body visual mass.
+
+LOW POLY STYLE:
+Visible polygonal surfaces and sharp angular geometric shapes.
+Triangular and polygonal facets across the body.
+Simplified polygonal 3D-inspired game asset illustration with clean geometric edges.
+
+FINS & TAIL:
+Short compact fins tightly aligned to the body.
+Geometric polygonal tail shape in moderate size.
+"""
+
+        style_prompt = {
+            "Low Poly Angular": """
+Strong angular low-poly style.
+Large clearly visible polygon facets and sharp geometric body planes.
+Distinct triangular shapes.
+""",
+
+            "Low Poly Faceted": """
+Highly faceted low-poly style with detailed polygonal body structure.
+Many clearly separated polygon surfaces and geometric mesh composition.
+"""
+        }
+
+        return common + style_prompt.get(style_name, "")
+
+    # --------------------------------------------------------
+    # Pixel Art
+    # --------------------------------------------------------
+    elif style_type == "pixel":
+
+        common = """
+Clean pixel art betta fish game asset based on input image reference.
+Clean side-view profile, entire fish inside frame, transparent background.
+
+BODY PROPORTIONS:
+Longer horizontal body, slightly thicker torso.
+Low vertical height, main body as dominant visual mass.
+
+PIXEL ART STYLE:
+Large chunky pixels, low-resolution retro 16-bit sprite appearance.
+Sharp blocky pixel edges and clean sprite outlines.
+
+FINS & TAIL:
+Very short compact fins held close to the body.
+Moderate tail size with sharp pixel definition.
+"""
+
+        style_prompt = {
+            "Pixel Classic Betta": """
+Classic retro pixel sprite.
+Compact horizontal proportions and short neat fins.
+""",
+
+            "Pixel Long Fin Betta": """
+Distinctive pixel tail details with short compact dorsal and anal fins.
+Chunky retro pixel shapes.
+""",
+
+            "Pixel Crowntail Betta": """
+Crowntail-inspired design with small pointed pixel tail edges.
+Compact body structure and chunky pixel shapes.
+"""
+        }
+
+        return common + style_prompt.get(style_name, "")
+
+    # --------------------------------------------------------
+    # Silhouette Vector
+    # --------------------------------------------------------
+    elif style_type == "silhouette":
+
+        common = """
+Minimal flat vector silhouette of a betta fish based on input image reference.
+Clean side-view profile, entire fish inside frame, transparent background.
+
+BODY PROPORTIONS:
+Longer horizontal body, thick compact body shape.
+Low vertical height with recognizable betta contour.
+
+VECTOR SILHOUETTE STYLE:
+Flat single-color fish silhouette.
+Bold recognizable outer contour with smooth clean vector edges.
+Minimalist logo icon appearance.
+"""
+
+        style_prompt = {
+            "Silhouette Vector": """
+Minimal elegant betta silhouette with smooth flowing outer contour.
+Moderate rounded tail and simple clean vector logo style.
+""",
+
+            "Silhouette Vector Fin": """
+Bold betta silhouette with sharp distinctive tail and fin contours.
+Thick horizontal body with modern graphic icon appearance.
+"""
+        }
+
+        return common + style_prompt.get(style_name, "")
+
+    # --------------------------------------------------------
+    # 기본값
+    # --------------------------------------------------------
+    else:
+        return """
+Create a clean betta fish game asset based on the input image.
+
+Keep a horizontal compact body.
+Keep the fish side-facing.
+Keep the entire fish inside the image.
+Transparent background.
+"""
 
 
 # ============================================================
-# 배경 제거
+# ComfyUI 통신
 # ============================================================
 
-def remove_background(input_path):
-    print("[1/6] 물고기 배경 제거 중...")
+def check_comfyui():
+    try:
+        r = requests.get(f"{COMFY_URL}/system_stats", timeout=5)
+        r.raise_for_status()
+        print(f"[OK] ComfyUI 연결: {COMFY_URL}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] ComfyUI에 연결할 수 없습니다: {COMFY_URL}")
+        print(f"        {e}")
+        print("        ComfyUI를 먼저 실행하세요.")
+        return False
 
-    with open(input_path, "rb") as f:
-        input_bytes = f.read()
 
-    output_bytes = remove(input_bytes)
+def upload_image(image_path):
+    filename = os.path.basename(image_path)
 
-    temp_path = "_fish_removed_bg.png"
+    with open(image_path, "rb") as f:
+        files = {
+            "image": (
+                filename,
+                f,
+                "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+            )
+        }
 
-    with open(temp_path, "wb") as f:
-        f.write(output_bytes)
+        data = {
+            "overwrite": "true"
+        }
 
-    image = Image.open(temp_path).convert("RGBA")
+        r = requests.post(
+            f"{COMFY_URL}/upload/image",
+            files=files,
+            data=data,
+            timeout=60,
+        )
+
+    r.raise_for_status()
+    result = r.json()
+
+    uploaded_name = result.get("name", filename)
+    subfolder = result.get("subfolder", "")
+
+    print(f"[OK] ComfyUI 입력 이미지 업로드: {uploaded_name}")
+
+    return uploaded_name, subfolder
+
+
+def load_workflow():
+    with open(WORKFLOW_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def prepare_workflow(workflow, image_name, prompt, seed, denoise):
+    # 깊은 복사
+    wf = json.loads(json.dumps(workflow))
+
+    # LoadImage node
+    if "53" not in wf:
+        raise RuntimeError("워크플로우에서 LoadImage 노드(53)를 찾을 수 없습니다.")
+
+    wf["53"]["inputs"]["image"] = image_name
+
+    # Positive prompt
+    if "6" not in wf:
+        raise RuntimeError("워크플로우에서 Positive CLIP 노드(6)를 찾을 수 없습니다.")
+
+    wf["6"]["inputs"]["text"] = prompt
+
+    # Negative prompt
+    if "7" not in wf:
+        raise RuntimeError("워크플로우에서 Negative CLIP 노드(7)를 찾을 수 없습니다.")
+
+    wf["7"]["inputs"]["text"] = """
+photorealistic,
+photograph,
+3d render,
+
+long fins,
+tall fins,
+large fins,
+huge fins,
+oversized fins,
+elongated fins,
+vertical fins,
+
+long dorsal fin,
+tall dorsal fin,
+large dorsal fin,
+
+long anal fin,
+tall anal fin,
+large anal fin,
+
+dorsal fin extending upward,
+anal fin extending downward,
+
+flowing fins,
+trailing fins,
+hanging fins,
+streamer fins,
+veil fins,
+
+giant tail,
+oversized tail,
+extremely long tail,
+
+vertically elongated fish,
+tall fish,
+stretched fish,
+
+deformed body,
+warped body,
+distorted anatomy,
+extra fins,
+extra appendages
+"""
+
+    # KSampler node
+    if "57" not in wf:
+        raise RuntimeError("워크플로우에서 KSampler 노드(57)를 찾을 수 없습니다.")
+
+    wf["57"]["inputs"]["seed"] = int(seed)
+    wf["57"]["inputs"]["steps"] = STEPS
+    wf["57"]["inputs"]["cfg"] = CFG
+    wf["57"]["inputs"]["denoise"] = denoise
+
+    # SaveImage 파일명
+    if "19" in wf:
+        wf["19"]["inputs"]["filename_prefix"] = "fish_candidate"
+
+    return wf
+
+
+def queue_prompt(workflow):
+    client_id = str(uuid.uuid4())
+
+    payload = {
+        "prompt": workflow,
+        "client_id": client_id,
+    }
+
+    r = requests.post(
+        f"{COMFY_URL}/prompt",
+        json=payload,
+        timeout=60,
+    )
+
+    if not r.ok:
+        print("[ERROR] ComfyUI /prompt 응답:")
+        print(r.text)
+
+    r.raise_for_status()
+    result = r.json()
+
+    if "error" in result:
+        raise RuntimeError(f"ComfyUI workflow error: {result}")
+
+    prompt_id = result.get("prompt_id")
+
+    if not prompt_id:
+        raise RuntimeError(f"prompt_id가 없습니다: {result}")
+
+    print(f"[OK] ComfyUI 작업 등록: {prompt_id}")
+
+    return prompt_id
+
+
+def wait_for_result(prompt_id, timeout=600):
+    start = time.time()
+
+    while True:
+        if time.time() - start > timeout:
+            raise TimeoutError(f"ComfyUI 생성 시간 초과: {prompt_id}")
+
+        r = requests.get(
+            f"{COMFY_URL}/history/{prompt_id}",
+            timeout=30,
+        )
+
+        r.raise_for_status()
+        history = r.json()
+
+        item = history.get(prompt_id)
+
+        if item:
+            status = item.get("status", {})
+
+            if status.get("status_str") == "error":
+                raise RuntimeError(
+                    "ComfyUI 이미지 생성 실패:\n"
+                    + json.dumps(item, ensure_ascii=False, indent=2)
+                )
+
+            if status.get("completed") is True:
+                outputs = item.get("outputs", {})
+
+                # SaveImage 결과 찾기
+                for node_id, node_output in outputs.items():
+                    images = node_output.get("images", [])
+
+                    if images:
+                        image_info = images[0]
+
+                        print("[OK] ComfyUI 이미지 생성 완료")
+
+                        return image_info
+
+        elapsed = int(time.time() - start)
+
+        print(
+            f"\r[대기] ComfyUI 생성 중... {elapsed}s",
+            end="",
+            flush=True
+        )
+
+        time.sleep(1)
+
+
+def download_result(image_info):
+    params = {
+        "filename": image_info["filename"],
+        "subfolder": image_info.get("subfolder", ""),
+        "type": image_info.get("type", "output"),
+    }
+
+    r = requests.get(
+        f"{COMFY_URL}/view",
+        params=params,
+        timeout=120,
+    )
+
+    r.raise_for_status()
+
+    return Image.open(
+        io.BytesIO(r.content)
+    ).convert("RGBA")
+
+
+# ============================================================
+# rembg 세션
+# ============================================================
+
+REMBG_SESSION = new_session("u2netp")
+
+
+# ============================================================
+# 이미지 후처리
+# ============================================================
+
+def remove_background(image):
+    print("[처리] 배경 제거 중...")
+
+    # ComfyUI에서 생성된 1024x1024 이미지를
+    # 배경 제거 전에 512x512로 축소하여 메모리 사용량 감소
+    background_input = image.resize(
+        (512, 512),
+        Image.Resampling.LANCZOS
+    ).convert("RGBA")
+
+    input_bytes = io.BytesIO()
 
     try:
-        os.remove(temp_path)
-    except Exception:
-        pass
+        background_input.save(
+            input_bytes,
+            format="PNG"
+        )
 
-    return image
+        output_bytes = remove(
+            input_bytes.getvalue(),
+            session=REMBG_SESSION
+        )
 
+    finally:
+        background_input.close()
+        input_bytes.close()
 
-# ============================================================
-# 알파 마스크 정리
-# ============================================================
+    result = Image.open(
+        io.BytesIO(output_bytes)
+    ).convert("RGBA")
+
+    return result
+
 
 def clean_alpha(image):
     rgba = np.array(image)
-
     alpha = rgba[:, :, 3]
 
-    # 작은 노이즈 제거
     alpha = cv2.GaussianBlur(alpha, (3, 3), 0)
-
-    # 너무 희미한 부분 제거
     alpha[alpha < 18] = 0
-
-    # 약간 부드럽게
     alpha = cv2.GaussianBlur(alpha, (3, 3), 0)
 
     rgba[:, :, 3] = alpha
@@ -97,42 +531,33 @@ def clean_alpha(image):
     return Image.fromarray(rgba)
 
 
-# ============================================================
-# 물고기 영역만 정확하게 crop
-# ============================================================
-
 def crop_to_fish(image):
-    print("[2/6] 물고기 실루엣 분석 중...")
-
     rgba = np.array(image)
     alpha = rgba[:, :, 3]
 
     ys, xs = np.where(alpha > 20)
 
     if len(xs) == 0 or len(ys) == 0:
-        print("[WARNING] 물고기 영역을 찾지 못했습니다.")
+        print("[WARN] 물고기 영역을 찾지 못했습니다. 원본 크기를 사용합니다.")
         return image
 
-    x1 = max(0, xs.min() - MARGIN)
-    y1 = max(0, ys.min() - MARGIN)
-    x2 = min(image.width, xs.max() + MARGIN + 1)
-    y2 = min(image.height, ys.max() + MARGIN + 1)
+    x1 = max(0, int(xs.min()) - 5)
+    y1 = max(0, int(ys.min()) - 5)
+    x2 = min(image.width, int(xs.max()) + 6)
+    y2 = min(image.height, int(ys.max()) + 6)
 
     return image.crop((x1, y1, x2, y2))
 
 
-# ============================================================
-# 640x640 투명 캔버스에 물고기 배치
-# ============================================================
-
 def fit_to_canvas(image):
-    print("[3/6] 디지털 트윈용 크기로 변환 중...")
+    max_width = CANVAS_WIDTH - (MARGIN * 2)
+    max_height = CANVAS_HEIGHT - (MARGIN * 2)
 
-    max_size = CANVAS_SIZE - (MARGIN * 2)
-
+    # 원본 가로세로 비율을 유지하면서
+    # 1536x1024 캔버스 안에 맞춤
     scale = min(
-        max_size / image.width,
-        max_size / image.height
+        max_width / image.width,
+        max_height / image.height
     )
 
     new_w = max(1, int(image.width * scale))
@@ -145,436 +570,60 @@ def fit_to_canvas(image):
 
     canvas = Image.new(
         "RGBA",
-        (CANVAS_SIZE, CANVAS_SIZE),
+        (CANVAS_WIDTH, CANVAS_HEIGHT),
         (0, 0, 0, 0)
     )
 
-    x = (CANVAS_SIZE - new_w) // 2
-    y = (CANVAS_SIZE - new_h) // 2
+    x = (CANVAS_WIDTH - new_w) // 2
+    y = (CANVAS_HEIGHT - new_h) // 2
 
-    canvas.alpha_composite(
-        resized,
-        (x, y)
-    )
+    canvas.alpha_composite(resized, (x, y))
 
     return canvas
 
 
-# ============================================================
-# 색상 보정
-# ============================================================
+def make_pixel_art(image):
+    # 1536x1024 -> 96x64 -> 1536x1024
+    # 3:2 비율을 그대로 유지
+    # 기존 192x128보다 픽셀 크기를 크게 만듦
 
-def adjust_color(
-    image,
-    saturation=1.0,
-    brightness=1.0,
-    contrast=1.0
-):
-    rgb = image.convert("RGB")
+    small_width = 96
+    small_height = 64
 
-    rgb = ImageEnhance.Color(rgb).enhance(saturation)
-    rgb = ImageEnhance.Brightness(rgb).enhance(brightness)
-    rgb = ImageEnhance.Contrast(rgb).enhance(contrast)
-
-    result = rgb.convert("RGBA")
-
-    result.putalpha(image.getchannel("A"))
-
-    return result
-
-
-# ============================================================
-# HSV 색상 변경
-# ============================================================
-
-def hue_shift(image, degrees):
-    rgba = np.array(image)
-
-    rgb = rgba[:, :, :3]
-
-    hsv = cv2.cvtColor(
-        rgb,
-        cv2.COLOR_RGB2HSV
-    ).astype(np.float32)
-
-    hsv[:, :, 0] = (
-        hsv[:, :, 0]
-        + degrees / 2.0
-    ) % 180
-
-    hsv = np.clip(
-        hsv,
-        0,
-        255
-    ).astype(np.uint8)
-
-    new_rgb = cv2.cvtColor(
-        hsv,
-        cv2.COLOR_HSV2RGB
+    small = image.resize(
+        (small_width, small_height),
+        Image.Resampling.LANCZOS
     )
 
-    result = np.dstack(
-        [new_rgb, rgba[:, :, 3]]
+    pixel = small.resize(
+        (CANVAS_WIDTH, CANVAS_HEIGHT),
+        Image.Resampling.NEAREST
     )
 
-    return Image.fromarray(result)
+    return pixel
 
 
-# ============================================================
-# 특정 색 계열로 자연스럽게 변환
-# ============================================================
+def process_generated_image(image, style_type):
+    image = remove_background(image)
 
-def colorize_fish(image, target_color, strength=0.35):
-    rgba = np.array(image).astype(np.float32)
+    image = clean_alpha(image)
 
-    rgb = rgba[:, :, :3]
+    image = crop_to_fish(image)
 
-    target = np.array(
-        target_color,
-        dtype=np.float32
+    image = fit_to_canvas(image)
+
+    if style_type == "pixel":
+        image = make_pixel_art(image)
+
+    return image
+
+
+def save_image(image, output_path):
+    image.save(
+        output_path,
+        "PNG",
+        optimize=True
     )
-
-    # 밝기 정보 유지
-    gray = (
-        rgb[:, :, 0] * 0.299
-        + rgb[:, :, 1] * 0.587
-        + rgb[:, :, 2] * 0.114
-    )
-
-    gray = gray / 255.0
-
-    target_img = np.zeros_like(rgb)
-
-    target_img[:, :, 0] = target[0] * (0.35 + gray * 0.65)
-    target_img[:, :, 1] = target[1] * (0.35 + gray * 0.65)
-    target_img[:, :, 2] = target[2] * (0.35 + gray * 0.65)
-
-    mixed = (
-        rgb * (1.0 - strength)
-        + target_img * strength
-    )
-
-    mixed = np.clip(
-        mixed,
-        0,
-        255
-    )
-
-    result = np.dstack(
-        [
-            mixed,
-            rgba[:, :, 3]
-        ]
-    ).astype(np.uint8)
-
-    return Image.fromarray(result)
-
-
-# ============================================================
-# 물고기 외곽선
-# ============================================================
-
-def add_outline(image, thickness=3, opacity=130):
-    rgba = np.array(image)
-
-    alpha = rgba[:, :, 3]
-
-    kernel = np.ones(
-        (thickness, thickness),
-        np.uint8
-    )
-
-    dilated = cv2.dilate(
-        alpha,
-        kernel,
-        iterations=1
-    )
-
-    outline = dilated - alpha
-
-    outline_alpha = (
-        outline.astype(np.float32)
-        * (opacity / 255.0)
-    ).astype(np.uint8)
-
-    outline_rgba = np.zeros_like(rgba)
-
-    # 어두운 남색 계열 외곽선
-    outline_rgba[:, :, 0] = 20
-    outline_rgba[:, :, 1] = 25
-    outline_rgba[:, :, 2] = 40
-    outline_rgba[:, :, 3] = outline_alpha
-
-    outline_img = Image.fromarray(
-        outline_rgba
-    )
-
-    result = Image.new(
-        "RGBA",
-        image.size,
-        (0, 0, 0, 0)
-    )
-
-    result.alpha_composite(outline_img)
-    result.alpha_composite(image)
-
-    return result
-
-
-# ============================================================
-# 부드러운 그림자
-# ============================================================
-
-def add_shadow(image):
-    alpha = image.getchannel("A")
-
-    shadow = Image.new(
-        "RGBA",
-        image.size,
-        (15, 23, 42, 0)
-    )
-
-    shadow.putalpha(
-        alpha.point(
-            lambda x: int(x * 0.22)
-        )
-    )
-
-    shadow = shadow.filter(
-        ImageFilter.GaussianBlur(10)
-    )
-
-    canvas = Image.new(
-        "RGBA",
-        image.size,
-        (0, 0, 0, 0)
-    )
-
-    canvas.alpha_composite(
-        shadow,
-        (0, 8)
-    )
-
-    canvas.alpha_composite(image)
-
-    return canvas
-
-
-# ============================================================
-# 하이라이트 추가
-# ============================================================
-
-def add_highlight(image, amount=0.15):
-    rgba = np.array(image).astype(np.float32)
-
-    rgb = rgba[:, :, :3]
-
-    # 밝은 영역만 살짝 강조
-    brightness = (
-        rgb[:, :, 0]
-        + rgb[:, :, 1]
-        + rgb[:, :, 2]
-    ) / 3.0
-
-    highlight = np.clip(
-        (brightness - 110) / 145,
-        0,
-        1
-    )
-
-    rgb += (
-        highlight[:, :, None]
-        * 255
-        * amount
-    )
-
-    rgb = np.clip(
-        rgb,
-        0,
-        255
-    )
-
-    result = np.dstack(
-        [rgb, rgba[:, :, 3]]
-    ).astype(np.uint8)
-
-    return Image.fromarray(result)
-
-
-# ============================================================
-# 후보별 스타일
-# ============================================================
-
-def create_style(base, index):
-    img = base.copy()
-
-    # --------------------------------------------------------
-    # 01 Natural
-    # --------------------------------------------------------
-    if index == 0:
-        img = adjust_color(
-            img,
-            saturation=1.08,
-            brightness=1.02,
-            contrast=1.08
-        )
-
-    # --------------------------------------------------------
-    # 02 Vivid
-    # --------------------------------------------------------
-    elif index == 1:
-        img = adjust_color(
-            img,
-            saturation=1.55,
-            brightness=1.05,
-            contrast=1.18
-        )
-
-        img = add_highlight(
-            img,
-            0.12
-        )
-
-    # --------------------------------------------------------
-    # 03 Ocean Blue
-    # --------------------------------------------------------
-    elif index == 2:
-        img = hue_shift(
-            img,
-            -25
-        )
-
-        img = adjust_color(
-            img,
-            saturation=1.35,
-            brightness=1.04,
-            contrast=1.12
-        )
-
-    # --------------------------------------------------------
-    # 04 Crimson
-    # --------------------------------------------------------
-    elif index == 3:
-        img = colorize_fish(
-            img,
-            (210, 35, 45),
-            0.42
-        )
-
-        img = adjust_color(
-            img,
-            saturation=1.45,
-            brightness=1.03,
-            contrast=1.12
-        )
-
-    # --------------------------------------------------------
-    # 05 Golden
-    # --------------------------------------------------------
-    elif index == 4:
-        img = colorize_fish(
-            img,
-            (230, 165, 40),
-            0.42
-        )
-
-        img = adjust_color(
-            img,
-            saturation=1.25,
-            brightness=1.08,
-            contrast=1.08
-        )
-
-    # --------------------------------------------------------
-    # 06 Galaxy
-    # --------------------------------------------------------
-    elif index == 5:
-        img = hue_shift(
-            img,
-            55
-        )
-
-        img = adjust_color(
-            img,
-            saturation=1.65,
-            brightness=0.96,
-            contrast=1.22
-        )
-
-        img = add_highlight(
-            img,
-            0.20
-        )
-
-    # --------------------------------------------------------
-    # 07 Koi
-    # --------------------------------------------------------
-    elif index == 6:
-        img = colorize_fish(
-            img,
-            (235, 95, 35),
-            0.28
-        )
-
-        img = adjust_color(
-            img,
-            saturation=1.25,
-            brightness=1.05,
-            contrast=1.10
-        )
-
-    # --------------------------------------------------------
-    # 08 Pastel
-    # --------------------------------------------------------
-    elif index == 7:
-        img = adjust_color(
-            img,
-            saturation=0.78,
-            brightness=1.16,
-            contrast=0.90
-        )
-
-    # --------------------------------------------------------
-    # 09 Deep Sea
-    # --------------------------------------------------------
-    elif index == 8:
-        img = hue_shift(
-            img,
-            -45
-        )
-
-        img = adjust_color(
-            img,
-            saturation=1.25,
-            brightness=0.88,
-            contrast=1.25
-        )
-
-    # --------------------------------------------------------
-    # 10 Soft Cartoon
-    # --------------------------------------------------------
-    elif index == 9:
-        img = adjust_color(
-            img,
-            saturation=1.30,
-            brightness=1.06,
-            contrast=1.25
-        )
-
-        img = add_outline(
-            img,
-            thickness=3,
-            opacity=150
-        )
-
-    # 공통 하이라이트
-    if index != 9:
-        img = add_highlight(
-            img,
-            0.08
-        )
-
-    return img
 
 
 # ============================================================
@@ -582,117 +631,114 @@ def create_style(base, index):
 # ============================================================
 
 def main():
-
-    print("=" * 60)
-    print(" Cyber Fish Tank - Betta Graphic Generator")
-    print("=" * 60)
-
-    print(f"입력 이미지 : {INPUT_PATH}")
-    print(f"출력 폴더   : {OUT_DIR}")
+    print("=" * 70)
+    print("Cyber Fish Tank - ComfyUI 10 Fish Candidate Generator")
+    print("=" * 70)
+    print(f"ComfyUI : {COMFY_URL}")
+    print(f"Input   : {INPUT_PATH}")
+    print(f"Output  : {OUT_DIR}")
+    print(f"Workflow: {WORKFLOW_PATH}")
+    print()
 
     if not os.path.exists(INPUT_PATH):
-        print()
-        print(
-            f"[ERROR] 입력 파일이 없습니다: {INPUT_PATH}"
-        )
+        print(f"[ERROR] 입력 이미지가 없습니다: {INPUT_PATH}")
         sys.exit(1)
 
-    # 출력 폴더 초기화
-    if os.path.exists(OUT_DIR):
-        print("[4/6] 기존 후보 이미지 정리 중...")
-        shutil.rmtree(OUT_DIR)
+    if not os.path.exists(WORKFLOW_PATH):
+        print(f"[ERROR] ComfyUI API workflow가 없습니다: {WORKFLOW_PATH}")
+        sys.exit(1)
 
-    os.makedirs(
-        OUT_DIR,
-        exist_ok=True
-    )
+    if not check_comfyui():
+        sys.exit(1)
 
-    # --------------------------------------------------------
-    # 1. 배경 제거
-    # --------------------------------------------------------
+    os.makedirs(OUT_DIR, exist_ok=True)
 
-    image = remove_background(
-        INPUT_PATH
-    )
+    # 기존 후보 이미지 제거
+    for filename in os.listdir(OUT_DIR):
+        path = os.path.join(OUT_DIR, filename)
 
-    # --------------------------------------------------------
-    # 2. 알파 정리
-    # --------------------------------------------------------
+        if os.path.isfile(path) and filename.lower().endswith(".png"):
+            os.remove(path)
 
-    image = clean_alpha(
-        image
-    )
+    # 입력 이미지 ComfyUI 업로드
+    image_name, image_subfolder = upload_image(INPUT_PATH)
 
-    # --------------------------------------------------------
-    # 3. 물고기 영역 crop
-    # --------------------------------------------------------
+    base_workflow = load_workflow()
 
-    image = crop_to_fish(
-        image
-    )
+    success = []
 
-    # --------------------------------------------------------
-    # 4. 640x640 변환
-    # --------------------------------------------------------
+    for index, (filename, label, style_type) in enumerate(STYLES, start=1):
 
-    base = fit_to_canvas(
-        image
-    )
+        print()
+        print("=" * 70)
+        print(f"[{index}/10] {label}")
+        print("=" * 70)
 
-    print("[5/6] 10가지 그래픽 스타일 생성 중...")
+        try:
+            prompt = build_prompt(label, style_type)
 
-    # --------------------------------------------------------
-    # 후보 생성
-    # --------------------------------------------------------
+            seed = random.randint(1, 2**63 - 1)
 
-    for index, (filename, label) in enumerate(STYLES):
+            denoise = (
+                DENOISE_HIGH
+                if style_type == "high_quality"
+                else DENOISE_PIXEL
+            )
 
-        print(
-            f"  [{index + 1:02d}/10] {label}"
-        )
+            workflow = prepare_workflow(
+                base_workflow,
+                image_name,
+                prompt,
+                seed,
+                denoise
+            )
 
-        styled = create_style(
-            base,
-            index
-        )
+            print(f"[설정] seed={seed}")
+            print(f"[설정] denoise={denoise}")
+            print(f"[설정] steps={STEPS}")
+            print(f"[설정] cfg={CFG}")
 
-        # 그림자
-        styled = add_shadow(
-            styled
-        )
+            prompt_id = queue_prompt(workflow)
 
-        # 최종 저장
-        output_path = os.path.join(
-            OUT_DIR,
-            f"{filename}.png"
-        )
+            image_info = wait_for_result(prompt_id)
 
-        styled.save(
-            output_path,
-            "PNG",
-            optimize=True
-        )
+            generated = download_result(image_info)
 
-    print("[6/6] 생성 완료!")
-    print()
+            processed = process_generated_image(
+                generated,
+                style_type
+            )
 
-    print("=" * 60)
-    print(" 생성된 후보")
-    print("=" * 60)
+            output_path = os.path.join(
+                OUT_DIR,
+                f"{filename}.png"
+            )
 
-    for filename, label in STYLES:
-        print(
-            f"  {filename}.png  ->  {label}"
-        )
+            save_image(processed, output_path)
+
+            print(f"[OK] 저장 완료: {output_path}")
+
+            success.append(output_path)
+
+            time.sleep(1)
+
+        except Exception as e:
+            print(f"[ERROR] {label} 생성 실패")
+            print(e)
 
     print()
-    print(f"출력 위치: {OUT_DIR}")
-    print("=" * 60)
+    print("=" * 70)
+    print(f"완료: {len(success)}/10")
+    print("=" * 70)
 
+    for path in success:
+        print(f"  - {path}")
 
-# ============================================================
-# 실행
-# ============================================================
+    if len(success) != 10:
+        print()
+        print("[WARN] 10개 중 일부 생성에 실패했습니다.")
+        sys.exit(2)
+
 
 if __name__ == "__main__":
     main()

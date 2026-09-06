@@ -44,6 +44,30 @@ export interface FishData {
 }
 
 // ======================================================
+// 어항 커스터마이징 구조물
+// ======================================================
+
+export type AquariumDecorationType =
+  | 'house'
+  | 'plant'
+  | 'rock'
+  | 'structure';
+
+export interface AquariumDecoration {
+  id: string;
+
+  type: AquariumDecorationType;
+
+  // 어항 내부 위치 (%)
+  x: number;
+  y: number;
+
+  // 크기 (%)
+  width?: number;
+  height?: number;
+}
+
+// ======================================================
 // Python → Node.js → WebSocket → React
 // 센서 원본 데이터
 // ======================================================
@@ -147,6 +171,16 @@ interface AppContextType {
 
   controlPin: string;
   setControlPin: (val: string) => void;
+
+  // --------------------------------------------------
+  // 어항 커스터마이징
+  // --------------------------------------------------
+
+  aquariumDecorations: AquariumDecoration[];
+
+  setAquariumDecorations: (
+    decorations: AquariumDecoration[]
+  ) => void;
 
   // --------------------------------------------------
   // 수온 제어
@@ -273,6 +307,15 @@ export const AppProvider: React.FC<{
 
   const [controlPin, setControlPin] =
     useState('2480');
+
+  // ====================================================
+  // 어항 커스터마이징
+  // ====================================================
+
+  const [
+    aquariumDecorations,
+    setAquariumDecorations
+  ] = useState<AquariumDecoration[]>([]);
 
   // ====================================================
   // 수온 제어
@@ -520,13 +563,15 @@ export const AppProvider: React.FC<{
             pose_direction:
               data.pose_direction || 'none',
 
-            head:
-              Array.isArray(data.keypoints?.head)
+            head: Array.isArray(data.head)
+              ? data.head
+              : Array.isArray(data.keypoints?.head)
                 ? data.keypoints.head
                 : [0.5, 0.5],
 
-            tail:
-              Array.isArray(data.keypoints?.tail)
+            tail: Array.isArray(data.tail)
+              ? data.tail
+              : Array.isArray(data.keypoints?.tail)
                 ? data.keypoints.tail
                 : [0.5, 0.5],
 
@@ -1113,6 +1158,13 @@ export const AppProvider: React.FC<{
 
     controlPin,
     setControlPin,
+
+    // --------------------------------------------------
+    // 어항 커스터마이징
+    // --------------------------------------------------
+
+    aquariumDecorations,
+    setAquariumDecorations,
 
     // --------------------------------------------------
     // 수온
