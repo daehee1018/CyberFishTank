@@ -508,6 +508,85 @@ db.prepare(`
 console.log('✅ sensor_data 테이블 확인 완료');
 
 // ============================================================
+// 알람 데이터 테이블 추가 (sensor.db)
+// ============================================================
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    time TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    type TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )
+`).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS alert_processing_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_sensor_id INTEGER NOT NULL DEFAULT 0
+  )
+`).run();
+
+db.prepare(`
+  INSERT OR IGNORE INTO alert_processing_state (id, last_sensor_id)
+  VALUES (1, 0)
+`).run();
+
+console.log('✅ alerts 테이블 확인 완료');
+
+const insertAlertStmt = db.prepare(`
+  INSERT INTO alerts (title, time, detail, type, created_at)
+  VALUES (@title, @time, @detail, @type, @created_at)
+`);
+
+const getLastProcessedSensorIdStmt = db.prepare(`
+  SELECT last_sensor_id
+  FROM alert_processing_state
+  WHERE id = 1
+`);
+
+const updateLastProcessedSensorIdStmt = db.prepare(`
+  UPDATE alert_processing_state
+  SET last_sensor_id = ?
+  WHERE id = 1
+`);
+
+const getLatestAlertByTypeStmt = db.prepare(`
+  SELECT id, title, time, detail, type
+  FROM alerts
+  WHERE type = ?
+  ORDER BY id DESC
+  LIMIT 1
+`);
+
+// ============================================================
+// 알람 디바운싱(쿨다운)
+//
+// 동일한 알람 type은 5분 이내 중복 저장하지 않음
+// - 메모리 기준: 같은 서버 실행 중 즉시 중복 차단
+// - DB 기준: 서버 재시작 직후에도 최근 5분 중복 차단
+// ============================================================
+const ALERT_COOLDOWN = 5 * 60 * 1000;
+const lastAlertTimeByType = new Map();
+
+const findRecentAlertStmt = db.prepare(`
+  SELECT id, created_at
+  FROM alerts
+  WHERE type = ?
+    AND created_at >= ?
+  ORDER BY id DESC
+  LIMIT 1
+`);
+
+// 최근 알람 조회 성능을 위한 인덱스
+// 기존 alerts 테이블이 있어도 안전하게 추가됨.
+db.prepare(`
+  CREATE INDEX IF NOT EXISTS idx_alerts_type_created_at
+  ON alerts (type, created_at)
+`).run();
+
+// ============================================================
 // YOLO 데이터 테이블
 // ============================================================
 
@@ -2765,6 +2844,265 @@ function saveSensorData(data) {
 
 }
 
+function formatAlertTime(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function createAlertIfAllowed({
+  title,
+  detail,
+  type,
+  eventTime
+}) {
+  const eventDate = new Date(eventTime);
+  const eventTimeMs = eventDate.getTime();
+
+  if (!Number.isFinite(eventTimeMs)) {
+    return null;
+  }
+
+  // ============================================================
+  // 1. 메모리 기반 5분 디바운싱
+  // ============================================================
+
+  const lastMemoryTime = lastAlertTimeByType.get(type);
+
+  if (
+    lastMemoryTime !== undefined &&
+    eventTimeMs - lastMemoryTime < ALERT_COOLDOWN
+  ) {
+    return null;
+  }
+
+  // ============================================================
+  // 2. DB 기반 5분 디바운싱
+  // 서버 재시작 후에도 중복 방지
+  // ============================================================
+
+  const latestAlert = getLatestAlertByTypeStmt.get(type);
+
+  if (latestAlert) {
+    const latestTimeMs = new Date(latestAlert.time).getTime();
+
+    if (
+      Number.isFinite(latestTimeMs) &&
+      eventTimeMs >= latestTimeMs &&
+      eventTimeMs - latestTimeMs < ALERT_COOLDOWN
+    ) {
+      lastAlertTimeByType.set(type, latestTimeMs);
+      return null;
+    }
+  }
+
+  // ============================================================
+  // 3. 알람 저장
+  // ============================================================
+
+  const formattedTime = formatAlertTime(eventDate);
+
+  const result = insertAlertStmt.run({
+    title,
+    time: formattedTime,
+    detail,
+    type,
+    created_at: new Date().toISOString()
+  });
+
+  const newAlert = {
+    id: Number(result.lastInsertRowid),
+    title,
+    time: formattedTime,
+    detail,
+    type
+  };
+
+  lastAlertTimeByType.set(type, eventTimeMs);
+
+  // ============================================================
+  // 4. WebSocket 브로드캐스트
+  // ============================================================
+
+  const alertMessage = JSON.stringify({
+    type: 'alert',
+    alert: newAlert
+  });
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(alertMessage);
+    }
+  });
+
+  return newAlert;
+}
+
+function evaluateSensorAlert(sensorData) {
+  const eventTime = sensorData.timestamp || new Date().toISOString();
+
+  const temperature =
+  sensorData.temperature === null ||
+  sensorData.temperature === undefined
+    ? NaN
+    : Number(sensorData.temperature);
+
+  const ph =
+    sensorData.ph === null ||
+    sensorData.ph === undefined
+      ? NaN
+      : Number(sensorData.ph);
+
+  const waterLevel =
+    sensorData.water_level_detected === null ||
+    sensorData.water_level_detected === undefined ||
+    sensorData.water_level_detected === ''
+      ? NaN
+      : Number(sensorData.water_level_detected);
+
+  // ============================================================
+  // 수온
+  // ============================================================
+
+  if (Number.isFinite(temperature)) {
+    if (temperature > 26) {
+      createAlertIfAllowed({
+        type: 'temperature-increase',
+        title: '수온 상승 경고',
+        detail: '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도',
+        eventTime
+      });
+    } else if (temperature < 24) {
+      createAlertIfAllowed({
+        type: 'temperature-decrease',
+        title: '수온 저하 경고',
+        detail: '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도',
+        eventTime
+      });
+    }
+  }
+
+  // ============================================================
+  // pH
+  // ============================================================
+
+  if (Number.isFinite(ph)) {
+    if (ph > 7) {
+      createAlertIfAllowed({
+        type: 'ph-increase',
+        title: 'pH 상승 경고',
+        detail: 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7',
+        eventTime
+      });
+    } else if (ph < 6) {
+      createAlertIfAllowed({
+        type: 'ph-decrease',
+        title: 'pH 하락 경고',
+        detail: 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7',
+        eventTime
+      });
+    }
+  }
+
+  // ============================================================
+  // 수위
+  // ============================================================
+
+  if (
+    Number.isFinite(waterLevel) &&
+    waterLevel === 0
+  ) {
+    createAlertIfAllowed({
+      type: 'water-decrease',
+      title: '수위 저하 경고',
+      detail: '수위가 기준보다 낮습니다.',
+      eventTime
+    });
+  }
+}
+
+function processStoredSensorAlerts() {
+  try {
+    // ============================================================
+    // 마지막 처리 ID 조회
+    // ============================================================
+
+    const state = getLastProcessedSensorIdStmt.get();
+
+    const lastSensorId = state
+      ? Number(state.last_sensor_id)
+      : 0;
+
+    // ============================================================
+    // 아직 처리하지 않은 센서 데이터 조회
+    // ============================================================
+
+    const rows = db.prepare(`
+      SELECT
+        id,
+        timestamp,
+        temperature,
+        ph,
+        water_level_detected
+      FROM sensor_data
+      WHERE id > ?
+      ORDER BY id ASC
+    `).all(lastSensorId);
+
+    if (rows.length === 0) {
+      console.log('ℹ️ 처리할 과거 센서 데이터가 없습니다.');
+      return;
+    }
+
+    console.log(
+      `🔍 과거 센서 데이터 ${rows.length}개 알람 검사 시작`
+    );
+
+    let latestProcessedId = lastSensorId;
+
+    // ============================================================
+    // 시간 순서대로 알람 검사
+    // ============================================================
+
+    for (const row of rows) {
+      evaluateSensorAlert({
+        timestamp: row.timestamp,
+        temperature: row.temperature,
+        ph: row.ph,
+        water_level_detected:
+          row.water_level_detected
+      });
+
+      latestProcessedId = Number(row.id);
+    }
+
+    // ============================================================
+    // 마지막 처리 ID 저장
+    // ============================================================
+
+    updateLastProcessedSensorIdStmt.run(
+      latestProcessedId
+    );
+
+    console.log(
+      `✅ 과거 센서 데이터 알람 처리 완료 (ID: ${latestProcessedId})`
+    );
+
+  } catch (error) {
+    console.error(
+      '❌ 과거 센서 알람 처리 오류:',
+      error
+    );
+  }
+}
 
 // ============================================================
 // 센서 데이터 수신
@@ -2816,13 +3154,15 @@ app.post(
           req.body
         );
 
+      evaluateSensorAlert(sensorData);
 
       // --------------------------------------------------------
       // 서버에는 보정된 센서 데이터 표시
       // --------------------------------------------------------
 
-      console.log('');
       /*
+      console.log('');
+      
       console.log(
         '📡 센서 데이터 수신'
       );
@@ -2846,6 +3186,43 @@ app.post(
       pendingSensorData =
         sensorData;
 
+      // --------------------------------------------------------
+      // WebSocket으로 최신 센서 데이터 전송
+      //
+      // Python
+      //   ↓
+      // Node.js
+      //   ↓
+      // WebSocket
+      //   ↓
+      // React AppContext
+      //
+      // DB 저장 주기와 관계없이
+      // 센서가 들어올 때마다 최신 데이터를 전송
+      // --------------------------------------------------------
+
+      const sensorMessage =
+        JSON.stringify(
+          sensorData
+        );
+
+
+      wss.clients.forEach(
+        client => {
+
+          if (
+            client.readyState ===
+            WebSocket.OPEN
+          ) {
+
+            client.send(
+              sensorMessage
+            );
+
+          }
+
+        }
+      );
 
       // --------------------------------------------------------
       // DB 저장 여부 확인
@@ -2868,9 +3245,18 @@ app.post(
         lastSensorSaveTime === 0
       ) {
 
-        saveSensorData(
-          pendingSensorData
-        );
+        const savedSensorId =
+          saveSensorData(
+            pendingSensorData
+          );
+
+        if (savedSensorId !== null) {
+
+          updateLastProcessedSensorIdStmt.run(
+            Number(savedSensorId)
+          );
+
+        }
 
         pendingSensorData =
           null;
@@ -2891,9 +3277,20 @@ app.post(
           pendingSensorData
         ) {
 
-          saveSensorData(
-            pendingSensorData
-          );
+          const savedSensorId =
+            saveSensorData(
+              pendingSensorData
+            );
+
+          if (
+            savedSensorId !== null
+          ) {
+
+            updateLastProcessedSensorIdStmt.run(
+              Number(savedSensorId)
+            );
+
+          }
 
           pendingSensorData =
             null;
@@ -3374,6 +3771,127 @@ app.get(
 
   }
 );
+
+// ============================================================
+// 알람 저장 및 조회 API
+// ============================================================
+app.post('/api/alerts', (req, res) => {
+  try {
+    const { title, time, detail, type } = req.body || {};
+
+    // 필수값 및 문자열 형식 최소 검증
+    if (
+      typeof title !== 'string' || !title.trim() ||
+      typeof time !== 'string' || !time.trim() ||
+      typeof detail !== 'string' || !detail.trim() ||
+      typeof type !== 'string' || !type.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: '필수 항목이 누락되었거나 형식이 올바르지 않습니다.'
+      });
+    }
+
+    const nowMs = Date.now();
+    const lastAlertTime = lastAlertTimeByType.get(type);
+
+    // --------------------------------------------------------
+    // 1차: 메모리 기반 5분 디바운싱
+    // --------------------------------------------------------
+    if (
+      lastAlertTime !== undefined &&
+      nowMs - lastAlertTime < ALERT_COOLDOWN
+    ) {
+      return res.status(200).json({
+        success: false,
+        duplicate: true,
+        message: '동일한 알람이 5분 이내에 이미 발생했습니다.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // 2차: DB 기반 최근 5분 중복 확인
+    // 서버 재시작 후에도 중복 저장을 방지함.
+    // --------------------------------------------------------
+    const cooldownStart = new Date(nowMs - ALERT_COOLDOWN).toISOString();
+    const recentAlert = findRecentAlertStmt.get(type, cooldownStart);
+
+    if (recentAlert) {
+      lastAlertTimeByType.set(type, nowMs);
+
+      return res.status(200).json({
+        success: false,
+        duplicate: true,
+        message: '동일한 알람이 최근 5분 이내에 저장되어 있습니다.'
+      });
+    }
+
+    const createdAt = new Date(nowMs).toISOString();
+
+    const result = insertAlertStmt.run({
+      title: title.trim(),
+      time: time.trim(),
+      detail: detail.trim(),
+      type: type.trim(),
+      created_at: createdAt
+    });
+
+    // 저장 성공 후에만 마지막 알람 시간을 갱신
+    lastAlertTimeByType.set(type.trim(), nowMs);
+
+    const newAlert = {
+      id: Number(result.lastInsertRowid),
+      title: title.trim(),
+      time: time.trim(),
+      detail: detail.trim(),
+      type: type.trim()
+    };
+
+    // WebSocket으로 연결된 모든 클라이언트에게 실시간 브로드캐스트
+    const alertMessage = JSON.stringify({
+      type: 'alert',
+      alert: newAlert
+    });
+
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(alertMessage);
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: newAlert
+    });
+  } catch (error) {
+    console.error('❌ 알람 저장 오류:', error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/alerts', (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT id, title, time, detail, type
+      FROM alerts
+      ORDER BY id DESC
+      LIMIT 100
+    `).all();
+
+    return res.json(rows);
+  } catch (error) {
+    console.error('❌ 알람 조회 오류:', error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 
 // ============================================================
@@ -3996,6 +4514,10 @@ server.listen(
     // ================================================
 
     scheduleDailyGrowthCalculation();
+
+    // ⭐ 이전에 저장된 센서 데이터 중
+    // 아직 알람 처리하지 않은 데이터 검사
+    processStoredSensorAlerts();
 
   }
 );

@@ -23,9 +23,12 @@ interface LightScheduleItem {
 // ======================================================
 
 interface Alert {
+  id: number;
+
   title: string;
+
   time: string;
-  level: '위험' | '주의' | '정보' | string;
+
   detail: string;
 }
 
@@ -240,6 +243,10 @@ interface AppContextType {
 
   alerts: Alert[];
 
+  setAlerts: React.Dispatch<
+    React.SetStateAction<Alert[]>
+  >;
+
   // --------------------------------------------------
   // YOLO / 물고기
   // --------------------------------------------------
@@ -307,6 +314,21 @@ export const AppProvider: React.FC<{
 
   const [controlPin, setControlPin] =
     useState('2480');
+
+  const formatAlertTime = (date: Date = new Date()): string => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
+
+  // AppProvider 내부:
+  const lastAlertTimeRef = useRef<Record<string, number>>({});
+  const FIVE_MINUTES = 5 * 60 * 1000;
 
   // ====================================================
   // 어항 커스터마이징
@@ -395,44 +417,237 @@ export const AppProvider: React.FC<{
   // 시스템 알림
   // ====================================================
 
-  const alerts: Alert[] = [
-    {
-      title: '활동량 급감',
-      time: '2026-04-13 11:03',
-      level: '위험',
-      detail:
-        '최근 30분 평균 활동량이 기준치보다 24% 낮습니다.',
-    },
-    {
-      title: 'pH 변동 감지',
-      time: '2026-04-13 10:42',
-      level: '주의',
-      detail:
-        'pH가 6.9에서 6.6으로 빠르게 변했습니다.',
-    },
-    {
-      title: '수위 저하 경고',
-      time: '2026-04-12 21:10',
-      level: '주의',
-      detail:
-        '수위가 권장 범위 하단에 근접했습니다.',
-    },
-    {
-      title: '조명 제어 완료',
-      time: '2026-04-12 19:15',
-      level: '정보',
-      detail:
-        '사용자 요청에 따라 조명 밝기가 70%로 조절되었습니다.',
-    },
-    {
-      title: '수온 상승 경고',
-      time: '2026-04-11 14:08',
-      level: '위험',
-      detail:
-        '수온이 26.3°C까지 올라 권장 범위를 초과했습니다.',
-    },
-  ];
+  const [alerts, setAlerts] =
+    useState<Alert[]>([]);
 
+  const checkAndSaveAlert = async (
+    type: string,
+    title: string,
+    detail: string,
+    eventTimeMs: number
+  ) => {
+
+    const lastTime =
+      lastAlertTimeRef.current[type];
+
+    // ==================================================
+    // 프론트엔드 1차 5분 디바운싱
+    //
+    // 최종 중복 방지는 server.cjs에서도 수행한다.
+    // ==================================================
+
+    if (
+      lastTime !== undefined &&
+      eventTimeMs - lastTime < FIVE_MINUTES
+    ) {
+      return;
+    }
+
+    lastAlertTimeRef.current[type] =
+      eventTimeMs;
+
+    const formattedTime =
+      formatAlertTime(
+        new Date(eventTimeMs)
+      );
+
+    try {
+
+      const API_URL =
+        import.meta.env.VITE_API_URL ||
+        'https://ggnu.site';
+
+      const response =
+        await fetch(
+          `${API_URL}/api/alerts`,
+          {
+            method: 'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
+
+            body: JSON.stringify({
+              title,
+              time: formattedTime,
+              detail,
+              type,
+            }),
+          }
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          '알람 저장 요청에 실패했습니다.'
+        );
+      }
+
+      const result =
+        await response.json();
+
+      // ==================================================
+      // 새 알람 저장 성공 시
+      //
+      // WebSocket 브로드캐스트도 오지만,
+      // POST 응답으로 먼저 상태를 즉시 반영한다.
+      // 이후 WebSocket으로 같은 ID가 들어와도
+      // 중복되지 않도록 ID를 검사한다.
+      // ==================================================
+
+      if (
+        result.success &&
+        result.data
+      ) {
+
+        const savedAlert: Alert = {
+          id: Number(
+            result.data.id
+          ),
+
+          title: String(
+            result.data.title
+          ),
+
+          time: String(
+            result.data.time
+          ),
+
+          detail: String(
+            result.data.detail
+          ),
+        };
+
+        setAlerts(prev => {
+
+          const alreadyExists =
+            prev.some(
+              alert =>
+                alert.id ===
+                savedAlert.id
+            );
+
+          if (alreadyExists) {
+            return prev;
+          }
+
+          return [
+            savedAlert,
+            ...prev,
+          ];
+        });
+      }
+
+    } catch (error) {
+
+      // 저장 실패 시 이번 디바운싱 기록을 제거하여
+      // 다음 센서 수신 때 재시도할 수 있도록 한다.
+      if (
+        lastAlertTimeRef.current[type] ===
+        eventTimeMs
+      ) {
+        delete lastAlertTimeRef.current[type];
+      }
+
+      console.error(
+        '❌ 알람 DB 저장 실패:',
+        error
+      );
+    }
+  };
+
+  const evaluateRealtimeSensor = (temp: number, ph: number, waterLevel: number, timestampStr: string) => {
+    const eventTimeMs = new Date(timestampStr).getTime() || Date.now();
+
+    if (Number.isFinite(temp)) {
+      if (temp > 26) checkAndSaveAlert('temperature-increase', '수온 상승 경고', '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도', eventTimeMs);
+      else if (temp < 24) checkAndSaveAlert('temperature-decrease', '수온 저하 경고', '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도', eventTimeMs);
+    }
+
+    if (Number.isFinite(ph)) {
+      if (ph > 7) checkAndSaveAlert('ph-increase', 'pH 상승 경고', 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7', eventTimeMs);
+      else if (ph < 6) checkAndSaveAlert('ph-decrease', 'pH 하락 경고', 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7', eventTimeMs);
+    }
+
+    if (Number.isFinite(waterLevel) && waterLevel === 0) {
+      checkAndSaveAlert('water-decrease', '수위 저하 경고', '수위가 기준보다 낮습니다.', eventTimeMs);
+    }
+  };
+
+  // ====================================================
+  // DB에서 알람 기록 불러오기
+  // ====================================================
+
+  useEffect(() => {
+
+    const loadAlerts = async () => {
+
+      try {
+
+        const API_URL =
+          import.meta.env.VITE_API_URL ||
+          'https://ggnu.site';
+
+        const response =
+          await fetch(
+            `${API_URL}/api/alerts`
+          );
+
+        if (!response.ok) {
+
+          throw new Error(
+            '알람 데이터를 불러오지 못했습니다.'
+          );
+
+        }
+
+        const data =
+          await response.json();
+
+        const loadedAlerts: Alert[] =
+          Array.isArray(data)
+            ? data.map(item => ({
+                id: Number(item.id),
+                title: String(item.title),
+                time: String(item.time),
+                detail: String(item.detail),
+              }))
+            : [];
+
+        setAlerts(loadedAlerts);
+
+        console.log(
+          '📋 DB 알람 기록 불러오기:',
+          loadedAlerts
+        );
+
+      } catch (error) {
+
+        console.error(
+          '❌ 알람 기록 불러오기 실패:',
+          error
+        );
+
+      }
+
+    };
+
+    loadAlerts();
+
+  }, []);
+
+  // ====================================================
+  // 센서별 마지막 알람 발생 시간
+  //
+  // 같은 알람은 5분 이후에만 다시 발생
+  // ====================================================
+  
+  // ====================================================
+  // 이상 징후 알림 추가
+  //
+  // 같은 알람은 5분 이후에만 다시 발생
+  // ====================================================
+  
   // ====================================================
   // YOLO / 물고기 데이터
   // ====================================================
@@ -539,7 +754,56 @@ export const AppProvider: React.FC<{
           JSON.parse(event.data);
 
         // =================================================
-        // 1. YOLO 데이터 확인
+        // 1. 알람 데이터 확인
+        // =================================================
+
+        if (
+          data.type === 'alert'
+        ) {
+
+          const newAlert: Alert = {
+            id:
+              Number(data.alert.id),
+
+            title:
+              String(data.alert.title),
+
+            time:
+              String(data.alert.time),
+
+            detail:
+              String(data.alert.detail),
+          };
+
+          setAlerts(prev => {
+
+            const alreadyExists =
+              prev.some(
+                alert =>
+                  alert.id === newAlert.id
+              );
+
+            if (alreadyExists) {
+              return prev;
+            }
+
+            return [
+              newAlert,
+              ...prev,
+            ];
+
+          });
+
+          console.log(
+            '🚨 새로운 알람 수신:',
+            newAlert
+          );
+
+          return;
+        }
+
+        // =================================================
+        // 2. YOLO 데이터 확인
         // =================================================
 
         const isYoloData =
@@ -590,7 +854,7 @@ export const AppProvider: React.FC<{
         }
 
         // =================================================
-        // 2. 센서 데이터인지 확인
+        // 3. 센서 데이터인지 확인
         // =================================================
 
         const isSensorData =
@@ -611,7 +875,7 @@ export const AppProvider: React.FC<{
         }
 
         // =================================================
-        // 3. 센서 데이터 변환
+        // 4. 센서 데이터 변환
         // =================================================
 
         let newSensorData: SensorData;
@@ -770,11 +1034,19 @@ export const AppProvider: React.FC<{
         }
 
         // =================================================
-        // 4. 실제 센서 데이터 저장
+        // 5. 실제 센서 데이터 저장
         // =================================================
 
         setSensorData(
           newSensorData
+        );
+
+        // setSensorData(newSensorData); 호출 바로 다음 위치에 추가
+        evaluateRealtimeSensor(
+          newSensorData.temperature_c,
+          newSensorData.ph,
+          Number(newSensorData.water_level_detected),
+          newSensorData.timestamp
         );
 
         console.log(
@@ -783,7 +1055,7 @@ export const AppProvider: React.FC<{
         );
 
         // =================================================
-        // 5. 기록 그래프용 데이터 생성
+        // 6. 기록 그래프용 데이터 생성
         // =================================================
 
         const newDisplayData: DisplaySensorData = {
@@ -825,7 +1097,7 @@ export const AppProvider: React.FC<{
         };
 
         // =================================================
-        // 6. 최신 데이터 저장
+        // 7. 최신 데이터 저장
         // =================================================
 
         setDisplaySensorData(
@@ -833,7 +1105,7 @@ export const AppProvider: React.FC<{
         );
 
         // =================================================
-        // 7. 1시간 버퍼에 추가
+        // 8. 1시간 버퍼에 추가
         // =================================================
 
         sensorBufferRef.current = [
@@ -852,7 +1124,7 @@ export const AppProvider: React.FC<{
         );
 
         // =================================================
-        // 8. 6개가 모이면 1시간 평균 계산
+        // 9. 6개가 모이면 1시간 평균 계산
         // =================================================
 
         if (
@@ -941,7 +1213,7 @@ export const AppProvider: React.FC<{
             );
 
           // =================================================
-          // 9. 1시간 평균 데이터
+          // 10. 1시간 평균 데이터
           // =================================================
 
           const averageData: HourlyAverage = {
@@ -986,7 +1258,7 @@ export const AppProvider: React.FC<{
           };
 
           // =================================================
-          // 10. 콘솔 출력
+          // 11. 콘솔 출력
           // =================================================
 
           console.log('');
@@ -1008,7 +1280,7 @@ export const AppProvider: React.FC<{
           console.log('');
 
           // =================================================
-          // 11. 가장 최근 1시간 평균
+          // 12. 가장 최근 1시간 평균
           // =================================================
 
           setHourlyAverage(
@@ -1016,7 +1288,7 @@ export const AppProvider: React.FC<{
           );
 
           // =================================================
-          // 12. 전체 시간 평균 기록에 추가
+          // 13. 전체 시간 평균 기록에 추가
           //
           // 예:
           //
@@ -1037,7 +1309,7 @@ export const AppProvider: React.FC<{
           );
 
           // =================================================
-          // 13. 다음 1시간 측정 시작
+          // 14. 다음 1시간 측정 시작
           // =================================================
 
           sensorBufferRef.current = [];
@@ -1220,6 +1492,7 @@ export const AppProvider: React.FC<{
     // --------------------------------------------------
 
     alerts,
+    setAlerts,
 
     // --------------------------------------------------
     // YOLO
