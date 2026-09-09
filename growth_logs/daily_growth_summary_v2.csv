@@ -1,0 +1,2 @@
+﻿date,daily_median_body_length_px,event_mean_body_length_px,event_std_body_length_px,event_mad_body_length_px,raw_median_body_length_px,raw_mad_body_length_px,daily_median_body_length_cm,event_mad_body_length_cm,n_events_raw,n_events_stable,n_events_used,n_samples,rejected_unstable_events,rejected_daily_outliers,quality_flag,sample_file
+2026-09-02,93.7142448425293,94.97082138061523,3.297631055062121,2.0045204162597656,93.53440856933594,0.860809326171875,,,3,3,3,9,0,0,MEDIUM,C:\Users\jsh14\Desktop\s\growth_logs\growth_samples_2026-09-02.csv
