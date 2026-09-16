@@ -21,7 +21,9 @@ const Dashboard: React.FC = () => {
     isLiveMode,
     setIsLiveMode,
     fishData,
+    aquariumDecorations,
     displaySensorData,
+    controlNotice,
   } = useAppContext();
 
   // ====================================================
@@ -210,6 +212,12 @@ const Dashboard: React.FC = () => {
 
       <div className="space-y-4">
 
+        {controlNotice && (
+          <div className="rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {controlNotice}
+          </div>
+        )}
+
         {/* =================================================
             디지털 트윈
             ================================================= */}
@@ -321,7 +329,10 @@ const Dashboard: React.FC = () => {
                 z-0
               ">
 
-                <Aquarium showFish={false}>
+                <Aquarium
+                  showFish={false}
+                  decorations={aquariumDecorations}
+                >
 
                   <Fish2D
                     {...fishData}

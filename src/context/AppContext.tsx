@@ -61,6 +61,8 @@ export interface AquariumDecoration {
 
   type: AquariumDecorationType;
 
+  src: string;
+
   // 어항 내부 위치 (%)
   x: number;
   y: number;
@@ -68,6 +70,8 @@ export interface AquariumDecoration {
   // 크기 (%)
   width?: number;
   height?: number;
+
+  sway?: boolean;
 }
 
 // ======================================================
@@ -337,7 +341,55 @@ export const AppProvider: React.FC<{
   const [
     aquariumDecorations,
     setAquariumDecorations
-  ] = useState<AquariumDecoration[]>([]);
+  ] = useState<AquariumDecoration[]>(() => {
+    try {
+      const saved =
+        localStorage.getItem(
+          'cyber-fishtank-aquarium-decorations'
+        );
+
+      if (!saved) {
+        return [];
+      }
+
+      const parsed =
+        JSON.parse(saved);
+
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return parsed.filter(
+        item =>
+          item &&
+          typeof item.id === 'string' &&
+          typeof item.type === 'string' &&
+          typeof item.src === 'string' &&
+          Number.isFinite(item.x) &&
+          Number.isFinite(item.y)
+      );
+    } catch (error) {
+      console.warn(
+        '어항 배치 복원 실패:',
+        error
+      );
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'cyber-fishtank-aquarium-decorations',
+        JSON.stringify(aquariumDecorations)
+      );
+    } catch (error) {
+      console.warn(
+        '어항 배치 저장 실패:',
+        error
+      );
+    }
+  }, [aquariumDecorations]);
 
   // ====================================================
   // 수온 제어

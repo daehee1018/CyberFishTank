@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Fish from './Fish';
+import type { AquariumDecoration } from '../context/AppContext';
 
 export default function Aquarium({
   children,
   showFish = true,
+  decorations = [],
 }: {
   children?: React.ReactNode;
   showFish?: boolean;
+  decorations?: AquariumDecoration[];
 }) {
   const [fish, setFish] = useState({
     id: 1,
@@ -187,16 +190,12 @@ export default function Aquarium({
         position: 'relative',
         overflow: 'hidden',
 
-        /*
-          기본 물 배경
-          너무 복잡하지 않고
-          디지털 트윈 화면에 적합하도록 구성
-        */
-        background:
-          'linear-gradient(to bottom, #7dd3fc 0%, #38bdf8 45%, #0ea5e9 100%)',
+        // 평면 실루엣 그래픽과 맞는 단색 물 배경
+        backgroundColor:
+          '#58b9d8',
 
         boxShadow:
-          'inset 0 0 30px rgba(0,0,0,0.15)',
+          'inset 0 0 18px rgba(15,23,42,0.1)',
       }}
     >
 
@@ -213,8 +212,8 @@ export default function Aquarium({
           width: '100%',
           height: '15%',
 
-          background:
-            'linear-gradient(to bottom, #f5deb3 0%, #d6b77a 100%)',
+          backgroundColor:
+            '#d7b77f',
 
           borderTop:
             '2px solid rgba(120,90,50,0.15)',
@@ -240,10 +239,30 @@ export default function Aquarium({
         }}
       >
 
-        {/*
-          Decoration Objects
-          다음 단계에서 추가
-        */}
+        {decorations.map(
+          decoration => (
+            <img
+              key={decoration.id}
+              src={
+                decoration.src.includes('?')
+                  ? decoration.src
+                  : `${decoration.src}?v=3`
+              }
+              alt=""
+              className={
+                decoration.sway
+                  ? 'aquarium-decoration aquarium-plant-sway'
+                  : 'aquarium-decoration'
+              }
+              style={{
+                left: `${decoration.x}%`,
+                top: `${decoration.y}%`,
+                width: `${decoration.width ?? 22}%`,
+                height: `${decoration.height ?? 22}%`,
+              }}
+            />
+          )
+        )}
 
       </div>
 

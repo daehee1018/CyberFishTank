@@ -1,1 +1,25 @@
 @import "tailwindcss";
+
+.aquarium-decoration {
+	position: absolute;
+	z-index: 1;
+	object-fit: contain;
+	pointer-events: none;
+	transform: translate(-50%, -100%);
+}
+
+@keyframes aquarium-plant-sway {
+	0%,
+	100% {
+		transform: translate(-50%, -100%) rotate(-1.5deg);
+	}
+
+	50% {
+		transform: translate(-50%, -100%) rotate(1.5deg);
+	}
+}
+
+.aquarium-plant-sway {
+	transform-origin: 50% 100%;
+	animation: aquarium-plant-sway 3.8s ease-in-out infinite;
+}
