@@ -29,8 +29,15 @@ const MAX_SPEED = 0.30;
 const HIGH_SAMPLE_COUNT = 1000;
 const MEDIUM_SAMPLE_COUNT = 300;
 
+// 정규화 좌표를 실제 영상 좌표로 환산
+const FRAME_WIDTH_PX = 1280;
+const FRAME_HEIGHT_PX = 720;
+
+// 성장 측정과 같은 기준: 170 px = 6 cm
+const CM_PER_PX = 6 / 170;
+
 // 모델 버전
-const MODEL_VERSION = 'activity-v1';
+const MODEL_VERSION = 'activity-v2-cm';
 
 
 // ======================================================
@@ -95,6 +102,19 @@ db.exec(`
 
   )
 `);
+
+// 기존 DB에도 변환 결과를 보존할 수 있도록 컬럼을 추가
+for (const column of ['total_distance_px', 'total_distance_cm']) {
+  try {
+    db.exec(
+      `ALTER TABLE daily_activity ADD COLUMN ${column} REAL`
+    );
+  } catch (error) {
+    if (!String(error.message).includes('duplicate column name')) {
+      throw error;
+    }
+  }
+}
 
 
 // ======================================================
@@ -350,13 +370,22 @@ console.log(
 let totalDistance =
   0;
 
+let totalDistancePx =
+  0;
+
 let totalSpeed =
+  0;
+
+let totalSpeedCm =
   0;
 
 let speedCount =
   0;
 
 let maxSpeed =
+  0;
+
+let maxSpeedCm =
   0;
 
 
@@ -446,6 +475,16 @@ for (
       dy * dy
     );
 
+  const distancePx =
+    Math.sqrt(
+      (dx * FRAME_WIDTH_PX) ** 2 +
+      (dy * FRAME_HEIGHT_PX) ** 2
+    );
+
+  const distanceCm =
+    distancePx *
+    CM_PER_PX;
+
 
   // 노이즈 제거
 
@@ -467,6 +506,10 @@ for (
 
   const speed =
     distance /
+    timeDiffSec;
+
+  const speedCm =
+    distanceCm /
     timeDiffSec;
 
 
@@ -491,9 +534,15 @@ for (
   totalDistance +=
     distance;
 
+  totalDistancePx +=
+    distancePx;
+
 
   totalSpeed +=
     speed;
+
+  totalSpeedCm +=
+    speedCm;
 
 
   speedCount++;
@@ -514,6 +563,16 @@ for (
 
   }
 
+  if (
+    speedCm >
+    maxSpeedCm
+  ) {
+
+    maxSpeedCm =
+      speedCm;
+
+  }
+
 
   previousPoint =
     point;
@@ -531,6 +590,16 @@ const averageSpeed =
       speedCount
     :
       0;
+
+const totalDistanceCm =
+  totalDistancePx *
+  CM_PER_PX;
+
+const averageSpeedCm =
+  speedCount > 0
+    ? totalSpeedCm /
+      speedCount
+    : 0;
 
 
 // ======================================================
@@ -585,15 +654,19 @@ console.log(
 );
 
 console.log(
-  `\n🏊 총 활동량: ${totalDistance.toFixed(4)}`
+  `\n🏊 총 활동량: ${totalDistanceCm.toFixed(4)} cm`
 );
 
 console.log(
-  `⚡ 평균 속도: ${averageSpeed.toFixed(4)} / sec`
+  `📏 총 이동거리: ${totalDistancePx.toFixed(2)} px`
 );
 
 console.log(
-  `🚀 최대 속도: ${maxSpeed.toFixed(4)} / sec`
+  `⚡ 평균 속도: ${averageSpeedCm.toFixed(4)} cm/sec`
+);
+
+console.log(
+  `🚀 최대 속도: ${maxSpeedCm.toFixed(4)} cm/sec`
 );
 
 
@@ -685,6 +758,10 @@ if (
 
       total_distance = ?,
 
+      total_distance_px = ?,
+
+      total_distance_cm = ?,
+
       average_speed = ?,
 
       max_speed = ?,
@@ -709,11 +786,15 @@ if (
   `)
   .run(
 
-    totalDistance,
+    totalDistanceCm,
 
-    averageSpeed,
+    totalDistancePx,
 
-    maxSpeed,
+    totalDistanceCm,
+
+    averageSpeedCm,
+
+    maxSpeedCm,
 
     rawSampleCount,
 
@@ -747,6 +828,10 @@ if (
       date,
 
       total_distance,
+
+      total_distance_px,
+
+      total_distance_cm,
 
       average_speed,
 
@@ -794,6 +879,10 @@ if (
 
       ?,
 
+      ?,
+
+      ?,
+
       ?
 
     )
@@ -802,11 +891,15 @@ if (
 
     targetDate,
 
-    totalDistance,
+    totalDistanceCm,
 
-    averageSpeed,
+    totalDistancePx,
 
-    maxSpeed,
+    totalDistanceCm,
+
+    averageSpeedCm,
+
+    maxSpeedCm,
 
     rawSampleCount,
 

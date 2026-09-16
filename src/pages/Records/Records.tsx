@@ -35,7 +35,7 @@ interface DbActivityData {
 
 interface ChartData {
   label: string;
-  value: number;
+  value: number | null;
   timestamp: string;
 }
 
@@ -1661,10 +1661,100 @@ const growthChartData =
       // ----------------------------------------------
 
       if (
-        growthData.length === 0
+        growthData.length === 0 &&
+        growthRange !== '1주'
       ) {
         return [];
       }
+
+      // ==============================================
+      // 1주
+      // 최근 7일
+
+      if (
+        growthRange === '1주'
+      ) {
+        const endDate =
+          new Date(
+            connectedAtRef.current
+          );
+
+        endDate.setHours(
+          0,
+          0,
+          0,
+          0
+        );
+
+        const startDate =
+          new Date(
+            endDate
+          );
+
+        startDate.setDate(
+          startDate.getDate() - 6
+        );
+
+        return Array.from(
+          { length: 7 },
+          (_, index) => {
+            const date =
+              new Date(
+                startDate
+              );
+
+            date.setDate(
+              startDate.getDate() + index
+            );
+
+            const dayItems =
+              growthData.filter(
+                item => {
+                  const itemDate =
+                    new Date(
+                      item.timestamp
+                    );
+
+                  return (
+                    itemDate.getFullYear() ===
+                      date.getFullYear() &&
+                    itemDate.getMonth() ===
+                      date.getMonth() &&
+                    itemDate.getDate() ===
+                      date.getDate()
+                  );
+                }
+              );
+
+            const average =
+              dayItems.length > 0
+                ? dayItems.reduce(
+                    (sum, item) =>
+                      sum + (item.value ?? 0),
+                    0
+                  ) / dayItems.length
+                : null;
+
+            return {
+              label:
+                `${String(
+                  date.getMonth() + 1
+                ).padStart(2, '0')}/${String(
+                  date.getDate()
+                ).padStart(2, '0')}`,
+              value:
+                average === null
+                  ? null
+                  : Number(
+                      average.toFixed(2)
+                    ),
+              timestamp:
+                date.toISOString(),
+            };
+          }
+        );
+      }
+
 
       const latestDate =
         new Date(
@@ -1672,64 +1762,6 @@ const growthChartData =
             growthData.length - 1
           ].timestamp
         );
-
-
-      // ==============================================
-      // 1주
-      //
-      // 최근 7일
-      // 일별 데이터 그대로 표시
-      // ==============================================
-
-      if (
-        growthRange === '1주'
-      ) {
-
-        const endDate =
-          new Date(
-            latestDate
-          );
-
-        endDate.setHours(
-          23,
-          59,
-          59,
-          999
-        );
-
-        const startDate =
-          new Date(
-            latestDate
-          );
-
-        startDate.setHours(
-          0,
-          0,
-          0,
-          0
-        );
-
-        startDate.setDate(
-          startDate.getDate() - 6
-        );
-
-        return growthData.filter(
-          item => {
-
-            const timestamp =
-              new Date(
-                item.timestamp
-              ).getTime();
-
-            return (
-              timestamp >=
-                startDate.getTime() &&
-              timestamp <=
-                endDate.getTime()
-            );
-          }
-        );
-      }
 
 
       // ==============================================
@@ -3071,19 +3103,33 @@ const activityChartData =
         growthChartData,
 
       min:
-        growthChartData.length > 0
+        growthChartData.some(
+          d => d.value !== null
+        )
           ? Math.min(
-              ...growthChartData.map(
-                d => d.value
+              ...(
+                growthChartData
+                  .map(d => d.value)
+                  .filter(
+                    (value): value is number =>
+                      value !== null
+                  )
               )
             ) - 0.5
           : 0,
 
       max:
-        growthChartData.length > 0
+        growthChartData.some(
+          d => d.value !== null
+        )
           ? Math.max(
-              ...growthChartData.map(
-                d => d.value
+              ...(
+                growthChartData
+                  .map(d => d.value)
+                  .filter(
+                    (value): value is number =>
+                      value !== null
+                  )
               )
             ) + 0.5
           : 1,
@@ -3285,6 +3331,12 @@ const activityChartData =
               item: ChartData,
               index: number
             ) => {
+
+              if (
+                item.value === null
+              ) {
+                return null;
+              }
 
               const x =
                 data.length === 1
@@ -3558,6 +3610,12 @@ const activityChartData =
                       index: number
                     ) => {
 
+                      if (
+                        item.value === null
+                      ) {
+                        return null;
+                      }
+
                       const x =
                         data.length === 1
                           ? 350
@@ -3786,6 +3844,16 @@ const activityChartData =
 
           <div
             className="
+              mb-4
+              text-sm
+              text-slate-500
+            "
+          >
+            일일 총 이동거리(cm)
+          </div>
+
+          <div
+            className="
               rounded-full
               border
               border-slate-200
@@ -3836,11 +3904,21 @@ const activityChartData =
                 index
               ) => {
 
+                const maxActivityValue =
+                  Math.max(
+                    ...activityChartData.map(
+                      chartItem =>
+                        chartItem.value ?? 0
+                    ),
+                    1
+                  );
+
                 const height =
                   Math.max(
                     60,
-                    item.value *
-                      3.2
+                    (item.value /
+                      maxActivityValue) *
+                      320
                   );
 
                 const isActive =
@@ -3884,7 +3962,7 @@ const activityChartData =
                           label:
                             item.label,
                           value:
-                            item.value,
+                            `${item.value} cm`,
                         })
                       }
                       onMouseLeave={() =>
