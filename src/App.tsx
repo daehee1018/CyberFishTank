@@ -3,8 +3,8 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout/Layout';
 import Dashboard from './pages/Dashboard/Dashboard';
 import Records from './pages/Records/Records';
-import RemoteControl from './pages/RemoteControl/RemoteControl';
 import Settings from './pages/Settings/Settings';
+import PersonalSettings from './pages/PersonalSettings/PersonalSettings';
 
 export default function App() {
   return (
@@ -24,13 +24,13 @@ export default function App() {
           />
 
           <Route
-            path="control"
-            element={<RemoteControl />}
+            path="settings"
+            element={<Settings />}
           />
 
           <Route
-            path="settings"
-            element={<Settings />}
+            path="personal-settings"
+            element={<PersonalSettings />}
           />
 
         </Route>

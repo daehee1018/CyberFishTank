@@ -1,6 +1,5 @@
 import React from 'react';
 import { useAppContext } from '../../context/AppContext';
-import FishSettings from '../../components/FishSettings';
 import { Fish2D } from '../../components/Fish2D';
 import Aquarium from '../../components/Aquarium';
 
@@ -22,6 +21,7 @@ const Dashboard: React.FC = () => {
     isLiveMode,
     setIsLiveMode,
     fishData,
+    displaySensorData,
   } = useAppContext();
 
   // ====================================================
@@ -39,35 +39,82 @@ const Dashboard: React.FC = () => {
     },
   ];
 
-  // ====================================================
-  // 하단 상태
-  //
-  // 현재는 기존 디자인 유지
-  //
-  // 이후 sensorData를 연결해서
-  // 실제 센서값으로 변경 가능
-  // ====================================================
+  const sensorValues =
+    displaySensorData;
+
+  const formatValue = (
+    value: number | undefined,
+    digits: number
+  ) =>
+    Number.isFinite(value)
+      ? value!.toFixed(digits)
+      : '-';
+
+  const temperature =
+    sensorValues?.temperature;
+
+  const ph =
+    sensorValues?.ph;
+
+  const waterLevel =
+    sensorValues
+      ? sensorValues.water_level * 100
+      : undefined;
+
+  const temperatureStatus =
+    temperature === undefined
+      ? '정보'
+      : temperature >= 24 &&
+          temperature <= 26
+        ? '정상'
+        : '주의';
+
+  const phStatus =
+    ph === undefined
+      ? '정보'
+      : ph >= 6 && ph <= 7
+        ? '정상'
+        : '주의';
+
+  const waterLevelStatus =
+    waterLevel === undefined
+      ? '정보'
+      : waterLevel >= 50
+        ? '적정'
+        : '낮음';
 
   const bottomStats = [
     {
       label: '수온',
-      value: '25.4°C',
-      status: '정상',
+      value:
+        temperature === undefined
+          ? '-'
+          : `${formatValue(temperature, 2)}°C`,
+      status: temperatureStatus,
     },
     {
       label: 'pH',
-      value: '6.8',
-      status: '주의',
+      value:
+        ph === undefined
+          ? '-'
+          : formatValue(ph, 2),
+      status: phStatus,
     },
     {
       label: '수위',
-      value: '82%',
-      status: '정상',
+      value:
+        waterLevel === undefined
+          ? '-'
+          : waterLevelStatus,
+      status:
+        waterLevel === undefined
+          ? '정보'
+          : waterLevelStatus,
     },
     {
       label: '조도',
-      value: '420 lx',
-      status: '정상',
+      value: '데이터 없음',
+      status: '정보',
     },
   ];
 
@@ -83,7 +130,13 @@ const Dashboard: React.FC = () => {
     정상:
       'bg-emerald-50 text-emerald-700 border-emerald-200',
 
+    적정:
+      'bg-emerald-50 text-emerald-700 border-emerald-200',
+
     주의:
+      'bg-amber-50 text-amber-700 border-amber-200',
+
+    낮음:
       'bg-amber-50 text-amber-700 border-amber-200',
 
     위험:
@@ -156,21 +209,6 @@ const Dashboard: React.FC = () => {
           ================================================== */}
 
       <div className="space-y-4">
-
-        {/* =================================================
-            물고기 설정
-            ================================================= */}
-
-        {!isLiveMode && (
-
-          <div className="transition-all duration-300 animate-fadeIn">
-
-            <FishSettings />
-
-          </div>
-
-        )}
-
 
         {/* =================================================
             디지털 트윈

@@ -7,7 +7,7 @@ const Layout: React.FC = () => {
   const topMenus = [
     { name: '대시보드', path: '/' },
     { name: '기록', path: '/records' },
-    { name: '원격 제어', path: '/control' },
+    { name: '개인 설정', path: '/personal-settings' },
     { name: '설정', path: '/settings' },
   ];
 

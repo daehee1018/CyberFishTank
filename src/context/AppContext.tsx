@@ -696,6 +696,9 @@ export const AppProvider: React.FC<{
   const sensorBufferRef =
     useRef<DisplaySensorData[]>([]);
 
+  const recentSensorBufferRef =
+    useRef<DisplaySensorData[]>([]);
+
   // ====================================================
   // WebSocket
   //
@@ -1097,11 +1100,84 @@ export const AppProvider: React.FC<{
         };
 
         // =================================================
-        // 7. 최신 데이터 저장
+        // 7. 최근 10분 평균 저장
         // =================================================
 
+        const newTimestamp =
+          new Date(
+            newDisplayData.timestamp
+          ).getTime();
+
+        const recentSamples =
+          Number.isFinite(newTimestamp)
+            ? [
+                ...recentSensorBufferRef.current,
+                newDisplayData,
+              ].filter(
+                item => {
+                  const itemTimestamp =
+                    new Date(
+                      item.timestamp
+                    ).getTime();
+
+                  return (
+                    Number.isFinite(itemTimestamp) &&
+                    itemTimestamp >=
+                      newTimestamp -
+                        3 * 60 * 1000 &&
+                    itemTimestamp <=
+                      newTimestamp
+                  );
+                }
+              )
+            : [newDisplayData];
+
+        recentSensorBufferRef.current =
+          recentSamples;
+
+        const averageRecent = (
+          key: keyof Omit<
+            DisplaySensorData,
+            'timestamp'
+          >
+        ) => {
+          const values =
+            recentSamples
+              .map(item => item[key])
+              .filter(
+                value =>
+                  Number.isFinite(value)
+              );
+
+          return values.length > 0
+            ? values.reduce(
+                (sum, value) =>
+                  sum + value,
+                0
+              ) / values.length
+            : 0;
+        };
+
+        const averagedDisplayData:
+          DisplaySensorData = {
+            temperature:
+              averageRecent('temperature'),
+            ph:
+              averageRecent('ph'),
+            water_level:
+              averageRecent('water_level'),
+            light:
+              averageRecent('light'),
+            tds:
+              averageRecent('tds'),
+            turbidity:
+              averageRecent('turbidity'),
+            timestamp:
+              newDisplayData.timestamp,
+          };
+
         setDisplaySensorData(
-          newDisplayData
+          averagedDisplayData
         );
 
         // =================================================

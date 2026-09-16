@@ -88,6 +88,11 @@ const Records: React.FC = () => {
   const [alertSort, setAlertSort] =
     useState('최신');
 
+  const [alertPage, setAlertPage] =
+    useState(1);
+
+  const ALERTS_PER_PAGE = 5;
+
   const [hoveredPoint, setHoveredPoint] =
     useState<any>(null);
 
@@ -3017,6 +3022,29 @@ const activityChartData =
       }
     );
 
+  const alertPageCount =
+    Math.max(
+      1,
+      Math.ceil(
+        sortedAlerts.length /
+          ALERTS_PER_PAGE
+      )
+    );
+
+  const currentAlertPage =
+    Math.min(
+      alertPage,
+      alertPageCount
+    );
+
+  const pagedAlerts =
+    sortedAlerts.slice(
+      (
+        currentAlertPage - 1
+      ) * ALERTS_PER_PAGE,
+      currentAlertPage * ALERTS_PER_PAGE
+    );
+
   // ======================================================
   // Y축 범위
   // ======================================================
@@ -4128,9 +4156,10 @@ const activityChartData =
               <button
                 key={sort}
                 onClick={() =>
-                  setAlertSort(
-                    sort
-                  )
+                  {
+                    setAlertSort(sort);
+                    setAlertPage(1);
+                  }
                 }
                 className={`
                   rounded-full
@@ -4156,12 +4185,12 @@ const activityChartData =
 
         <div
           className="
-            space-y-3
+            space-y-2
             rounded-[18px]
             border
             border-slate-200
             bg-slate-50
-            p-4
+            p-3
           "
         >
 
@@ -4184,7 +4213,7 @@ const activityChartData =
 
           ) : (
 
-            sortedAlerts.map(
+            pagedAlerts.map(
               alert => (
 
                 <div
@@ -4194,7 +4223,7 @@ const activityChartData =
                     border
                     border-slate-200
                     bg-white
-                    p-4
+                    p-3
                   "
                 >
 
@@ -4217,7 +4246,7 @@ const activityChartData =
 
                   <div
                     className="
-                      mt-2
+                      mt-1
                       text-xs
                       text-slate-500
                     "
@@ -4231,9 +4260,9 @@ const activityChartData =
 
                   <div
                     className="
-                      mt-3
+                      mt-2
                       text-sm
-                      leading-6
+                      leading-5
                       text-slate-700
                     "
                   >
@@ -4248,6 +4277,96 @@ const activityChartData =
           )}
 
         </div>
+
+        {sortedAlerts.length > 0 && (
+
+          <div
+            className="
+              mt-4
+              flex
+              items-center
+              justify-between
+              gap-3
+            "
+          >
+
+            <div
+              className="
+                text-sm
+                text-slate-500
+              "
+            >
+              {currentAlertPage} / {alertPageCount} 페이지
+            </div>
+
+            <div
+              className="
+                flex
+                gap-2
+              "
+            >
+
+              <button
+                type="button"
+                disabled={currentAlertPage === 1}
+                onClick={() =>
+                  setAlertPage(
+                    currentAlertPage - 1
+                  )
+                }
+                className="
+                  rounded-full
+                  border
+                  border-slate-200
+                  bg-white
+                  px-3
+                  py-1.5
+                  text-sm
+                  text-slate-600
+                  transition
+                  hover:border-slate-300
+                  hover:bg-slate-50
+                  disabled:cursor-not-allowed
+                  disabled:opacity-40
+                "
+              >
+                이전
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  currentAlertPage ===
+                  alertPageCount
+                }
+                onClick={() =>
+                  setAlertPage(
+                    currentAlertPage + 1
+                  )
+                }
+                className="
+                  rounded-full
+                  border
+                  border-slate-200
+                  bg-white
+                  px-3
+                  py-1.5
+                  text-sm
+                  text-slate-600
+                  transition
+                  hover:border-slate-300
+                  hover:bg-slate-50
+                  disabled:cursor-not-allowed
+                  disabled:opacity-40
+                "
+              >
+                다음
+              </button>
+
+            </div>
+
+          </div>
+        )}
 
       </div>
     );
