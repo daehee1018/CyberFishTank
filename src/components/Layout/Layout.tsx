@@ -1,9 +1,16 @@
 import React from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
 
 const Layout: React.FC = () => {
-  const { tankName, accountEmail } = useAppContext();
+  const { tankName, currentUser, logout } = useAppContext();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
+
   const topMenus = [
     { name: '대시보드', path: '/' },
     { name: '기록', path: '/records' },
@@ -30,8 +37,21 @@ const Layout: React.FC = () => {
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-slate-500">사용자</div>
-                  <div className="mt-1 text-base font-semibold text-slate-900">관리자</div>
-                  <div className="text-xs text-slate-500">{accountEmail}</div>
+                  <div className="mt-1 text-base font-semibold text-slate-900">
+                    {currentUser?.username}
+                    {currentUser?.role === 'admin' && (
+                      <span className="ml-2 rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-white">
+                        관리자
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="mt-1 text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-900"
+                  >
+                    로그아웃
+                  </button>
                 </div>
               </div>
             </div>

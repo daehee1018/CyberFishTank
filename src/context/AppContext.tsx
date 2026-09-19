@@ -146,10 +146,39 @@ export interface HourlyAverage {
 }
 
 // ======================================================
+// 로그인 계정
+// ======================================================
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  role: 'admin' | 'user';
+}
+
+// ======================================================
 // AppContext 타입
 // ======================================================
 
 interface AppContextType {
+
+  // --------------------------------------------------
+  // 로그인
+  // --------------------------------------------------
+
+  currentUser: AuthUser | null;
+  authLoading: boolean;
+
+  login: (
+    username: string,
+    password: string
+  ) => Promise<{ success: boolean; error?: string }>;
+
+  signup: (
+    username: string,
+    password: string
+  ) => Promise<{ success: boolean; error?: string }>;
+
+  logout: () => Promise<void>;
 
   // --------------------------------------------------
   // 기본 설정
@@ -163,6 +192,13 @@ interface AppContextType {
 
   fishName: string;
   setFishName: (val: string) => void;
+
+  fishSpecies: string | null;
+
+  updateFish: (
+    species: string,
+    name: string
+  ) => Promise<{ success: boolean; error?: string }>;
 
   notificationsEnabled: boolean;
   setNotificationsEnabled: (val: boolean) => void;
@@ -292,6 +328,169 @@ export const AppProvider: React.FC<{
 }> = ({ children }) => {
 
   // ====================================================
+  // 로그인
+  // ====================================================
+
+  const API_BASE =
+    import.meta.env.VITE_API_URL ||
+    'https://ggnu.site';
+
+  const [currentUser, setCurrentUser] =
+    useState<AuthUser | null>(null);
+
+  const [authLoading, setAuthLoading] =
+    useState(true);
+
+  useEffect(() => {
+    const loadCurrentUser = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/me`, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          setCurrentUser(null);
+          return;
+        }
+
+        const data = await response.json();
+        setCurrentUser(data.user ?? null);
+      } catch (error) {
+        console.error('❌ 로그인 상태 확인 실패:', error);
+        setCurrentUser(null);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    loadCurrentUser();
+  }, []);
+
+  const login = async (username: string, password: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/login`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || '로그인에 실패했습니다.' };
+      }
+
+      setCurrentUser(data.user);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ 로그인 요청 실패:', error);
+      return { success: false, error: '서버에 연결할 수 없습니다.' };
+    }
+  };
+
+  const signup = async (username: string, password: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/signup`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || '회원가입에 실패했습니다.' };
+      }
+
+      setCurrentUser(data.user);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ 회원가입 요청 실패:', error);
+      return { success: false, error: '서버에 연결할 수 없습니다.' };
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await fetch(`${API_BASE}/api/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('❌ 로그아웃 요청 실패:', error);
+    } finally {
+      setCurrentUser(null);
+      setFishSpecies(null);
+      setFishName('');
+    }
+  };
+
+  // ====================================================
+  // 로그인한 유저별 물고기 설정
+  //
+  // 센서/YOLO 데이터는 물리 어항 하나를 공유하지만,
+  // 물고기 종류/이름은 계정별로 개별 저장된다.
+  // ====================================================
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    const loadFish = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/fish`, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data.fish) {
+          setFishSpecies(data.fish.species);
+          setFishName(data.fish.fishName);
+        } else {
+          setFishSpecies(null);
+          setFishName('');
+        }
+      } catch (error) {
+        console.error('❌ 물고기 정보 조회 실패:', error);
+      }
+    };
+
+    loadFish();
+  }, [currentUser]);
+
+  const updateFish = async (species: string, name: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/fish`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ species, fishName: name }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || '물고기 정보 저장에 실패했습니다.' };
+      }
+
+      setFishSpecies(species);
+      setFishName(name);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ 물고기 정보 저장 실패:', error);
+      return { success: false, error: '서버에 연결할 수 없습니다.' };
+    }
+  };
+
+  // ====================================================
   // 기본 설정
   // ====================================================
 
@@ -302,7 +501,10 @@ export const AppProvider: React.FC<{
     useState('Cyber Fish Tank');
 
   const [fishName, setFishName] =
-    useState('Nemo');
+    useState('');
+
+  const [fishSpecies, setFishSpecies] =
+    useState<string | null>(null);
 
   const [notificationsEnabled, setNotificationsEnabled] =
     useState(true);
@@ -1532,6 +1734,16 @@ export const AppProvider: React.FC<{
   const value: AppContextType = {
 
     // --------------------------------------------------
+    // 로그인
+    // --------------------------------------------------
+
+    currentUser,
+    authLoading,
+    login,
+    signup,
+    logout,
+
+    // --------------------------------------------------
     // 기본 설정
     // --------------------------------------------------
 
@@ -1543,6 +1755,9 @@ export const AppProvider: React.FC<{
 
     fishName,
     setFishName,
+
+    fishSpecies,
+    updateFish,
 
     notificationsEnabled,
     setNotificationsEnabled,

@@ -7,11 +7,63 @@ const fs = require('fs');
 const multer = require('multer');
 const { exec, execFile } = require('child_process');
 const Database = require('better-sqlite3');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 
-app.use(cors());
+// ============================================================
+// CORS
+//
+// 프론트엔드(다른 도메인/포트)에서 로그인 쿠키를 주고받으려면
+// origin을 '*'가 아닌 요청 origin 자체로 지정하고
+// credentials를 허용해야 함.
+//
+// ALLOWED_ORIGINS 환경변수(콤마 구분)로 배포 도메인을 제한할 수 있음.
+// 지정하지 않으면 요청 origin을 그대로 허용(개발 편의용).
+// ============================================================
+
+const allowedOrigins =
+  (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      callback(null, origin);
+      return;
+    }
+    callback(new Error('CORS로 차단된 요청입니다.'));
+  },
+  credentials: true,
+}));
+
 app.use(express.json());
+
+// ============================================================
+// 로그인 세션
+// ============================================================
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
+
+app.use(session({
+  name: 'cft.sid',
+  secret: process.env.SESSION_SECRET || 'cyberfishtank-dev-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: isProduction ? 'none' : 'lax',
+    secure: isProduction,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
+}));
 
 
 // ============================================================
@@ -46,6 +98,347 @@ console.log('🗄️ SQLite 데이터베이스 연결');
 console.log('============================================');
 console.log(`📁 DB 위치: ${dbPath}`);
 console.log('============================================');
+
+// ============================================================
+// 계정 SQLite 데이터베이스
+//
+// sensor.db / database.sqlite와 별도 파일로 분리.
+// (센서 DB는 이미 git에 커밋된 이력이 있어, 비밀번호 해시가
+//  섞여 들어가지 않도록 계정 정보는 항상 별도 DB에 보관한다)
+// ============================================================
+
+const authDbPath = path.join(__dirname, 'auth.db');
+
+const authDb = new Database(authDbPath);
+
+console.log('');
+console.log('============================================');
+console.log('🔐 계정 SQLite 데이터베이스 연결');
+console.log('============================================');
+console.log(`📁 DB 위치: ${authDbPath}`);
+console.log('============================================');
+
+authDb.prepare(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+    created_at TEXT NOT NULL
+  )
+`).run();
+
+console.log('✅ users 테이블 확인 완료');
+
+const getUserByUsernameStmt = authDb.prepare(`
+  SELECT id, username, password_hash, role FROM users WHERE username = ?
+`);
+
+const getUserByIdStmt = authDb.prepare(`
+  SELECT id, username, role FROM users WHERE id = ?
+`);
+
+const insertUserStmt = authDb.prepare(`
+  INSERT INTO users (username, password_hash, role, created_at)
+  VALUES (@username, @password_hash, @role, @created_at)
+`);
+
+const listUsersStmt = authDb.prepare(`
+  SELECT id, username, role, created_at FROM users ORDER BY id ASC
+`);
+
+const deleteUserStmt = authDb.prepare(`
+  DELETE FROM users WHERE id = ?
+`);
+
+const countAdminsStmt = authDb.prepare(`
+  SELECT COUNT(*) AS count FROM users WHERE role = 'admin'
+`);
+
+// ============================================================
+// 유저별 물고기(어항) 설정
+//
+// 유저마다 자신만의 물고기 종류/이름을 가짐.
+// 센서/YOLO 데이터는 실제 물리 어항 하나를 공유하지만,
+// 이 값은 로그인한 계정별로 개별 저장된다.
+// ============================================================
+
+authDb.prepare(`
+  CREATE TABLE IF NOT EXISTS user_fish (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    species TEXT NOT NULL,
+    fish_name TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )
+`).run();
+
+console.log('✅ user_fish 테이블 확인 완료');
+
+const getUserFishStmt = authDb.prepare(`
+  SELECT species, fish_name FROM user_fish WHERE user_id = ?
+`);
+
+const upsertUserFishStmt = authDb.prepare(`
+  INSERT INTO user_fish (user_id, species, fish_name, updated_at)
+  VALUES (@user_id, @species, @fish_name, @updated_at)
+  ON CONFLICT(user_id) DO UPDATE SET
+    species = excluded.species,
+    fish_name = excluded.fish_name,
+    updated_at = excluded.updated_at
+`);
+
+// ============================================================
+// 최초 실행 시 관리자 계정 자동 생성
+//
+// ADMIN_USERNAME / ADMIN_PASSWORD 환경변수로 지정 가능.
+// 지정하지 않으면 admin / admin1234로 생성되며,
+// 배포 시 반드시 환경변수로 바꾸거나 로그인 후 비밀번호를
+// 변경해야 한다.
+// ============================================================
+
+function seedDefaultAdmin() {
+  const existingAdminCount = countAdminsStmt.get().count;
+
+  if (existingAdminCount > 0) {
+    return;
+  }
+
+  const username = process.env.ADMIN_USERNAME || 'admin';
+  const password = process.env.ADMIN_PASSWORD || 'admin1234';
+
+  insertUserStmt.run({
+    username,
+    password_hash: bcrypt.hashSync(password, 10),
+    role: 'admin',
+    created_at: new Date().toISOString(),
+  });
+
+  console.log('');
+  console.log('============================================');
+  console.log('🔐 기본 관리자 계정 생성됨');
+  console.log(`   아이디: ${username}`);
+  if (!process.env.ADMIN_PASSWORD) {
+    console.log(`   비밀번호: ${password} (기본값 - 로그인 후 반드시 변경하세요)`);
+  }
+  console.log('============================================');
+}
+
+seedDefaultAdmin();
+
+// ============================================================
+// 관리자 계정의 기본 물고기 데이터 보장
+//
+// 로그인 기능을 붙이기 전까지 앱이 전역으로 쓰던
+// 기본 물고기(베타 / Nemo)를 관리자 계정 소유로 이관한다.
+// ============================================================
+
+function ensureAdminHasFishDefault() {
+  const admin = getUserByUsernameStmt.get(process.env.ADMIN_USERNAME || 'admin');
+
+  if (!admin || getUserFishStmt.get(admin.id)) {
+    return;
+  }
+
+  upsertUserFishStmt.run({
+    user_id: admin.id,
+    species: 'betta',
+    fish_name: 'Nemo',
+    updated_at: new Date().toISOString(),
+  });
+
+  console.log('🐟 관리자 계정 기본 물고기(베타 / Nemo) 데이터 생성됨');
+}
+
+ensureAdminHasFishDefault();
+
+// ============================================================
+// 인증 미들웨어
+// ============================================================
+
+function requireAuth(req, res, next) {
+  if (!req.session.userId) {
+    return res.status(401).json({ success: false, error: '로그인이 필요합니다.' });
+  }
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.session.userId) {
+    return res.status(401).json({ success: false, error: '로그인이 필요합니다.' });
+  }
+  if (req.session.role !== 'admin') {
+    return res.status(403).json({ success: false, error: '관리자만 접근할 수 있습니다.' });
+  }
+  next();
+}
+
+// ============================================================
+// 인증 라우트
+// ============================================================
+
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body || {};
+
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: '아이디와 비밀번호를 입력해주세요.' });
+  }
+
+  const user = getUserByUsernameStmt.get(username);
+
+  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    return res.status(401).json({ success: false, error: '아이디 또는 비밀번호가 올바르지 않습니다.' });
+  }
+
+  req.session.userId = user.id;
+  req.session.role = user.role;
+
+  res.json({
+    success: true,
+    user: { id: user.id, username: user.username, role: user.role },
+  });
+});
+
+app.post('/api/signup', (req, res) => {
+  const { username, password } = req.body || {};
+
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: '아이디와 비밀번호를 입력해주세요.' });
+  }
+
+  if (password.length < 4) {
+    return res.status(400).json({ success: false, error: '비밀번호는 4자 이상이어야 합니다.' });
+  }
+
+  if (getUserByUsernameStmt.get(username)) {
+    return res.status(409).json({ success: false, error: '이미 존재하는 아이디입니다.' });
+  }
+
+  // 자기 자신에게 admin 권한을 줄 수 없도록 회원가입은 항상 'user' 역할로 생성
+  const result = insertUserStmt.run({
+    username,
+    password_hash: bcrypt.hashSync(password, 10),
+    role: 'user',
+    created_at: new Date().toISOString(),
+  });
+
+  const userId = Number(result.lastInsertRowid);
+
+  req.session.userId = userId;
+  req.session.role = 'user';
+
+  res.json({
+    success: true,
+    user: { id: userId, username, role: 'user' },
+  });
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('cft.sid');
+    res.json({ success: true });
+  });
+});
+
+app.get('/api/me', (req, res) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ success: false, error: '로그인이 필요합니다.' });
+  }
+
+  const user = getUserByIdStmt.get(req.session.userId);
+
+  if (!user) {
+    req.session.destroy(() => {});
+    return res.status(401).json({ success: false, error: '로그인이 필요합니다.' });
+  }
+
+  res.json({ success: true, user });
+});
+
+// ============================================================
+// 유저별 물고기 라우트
+// ============================================================
+
+app.get('/api/fish', requireAuth, (req, res) => {
+  const row = getUserFishStmt.get(req.session.userId);
+
+  res.json({
+    success: true,
+    fish: row ? { species: row.species, fishName: row.fish_name } : null,
+  });
+});
+
+app.post('/api/fish', requireAuth, (req, res) => {
+  const { species, fishName } = req.body || {};
+
+  if (!species || !fishName) {
+    return res.status(400).json({ success: false, error: '물고기 종류와 이름을 입력해주세요.' });
+  }
+
+  upsertUserFishStmt.run({
+    user_id: req.session.userId,
+    species,
+    fish_name: fishName,
+    updated_at: new Date().toISOString(),
+  });
+
+  res.json({ success: true, fish: { species, fishName } });
+});
+
+// ============================================================
+// 사용자 관리 라우트 (관리자 전용)
+// ============================================================
+
+app.get('/api/users', requireAdmin, (req, res) => {
+  res.json({ success: true, users: listUsersStmt.all() });
+});
+
+app.post('/api/users', requireAdmin, (req, res) => {
+  const { username, password, role } = req.body || {};
+
+  if (!username || !password || !['admin', 'user'].includes(role)) {
+    return res.status(400).json({
+      success: false,
+      error: '아이디, 비밀번호, 역할(admin/user)을 모두 입력해주세요.',
+    });
+  }
+
+  if (getUserByUsernameStmt.get(username)) {
+    return res.status(409).json({ success: false, error: '이미 존재하는 아이디입니다.' });
+  }
+
+  const result = insertUserStmt.run({
+    username,
+    password_hash: bcrypt.hashSync(password, 10),
+    role,
+    created_at: new Date().toISOString(),
+  });
+
+  res.json({
+    success: true,
+    user: { id: Number(result.lastInsertRowid), username, role },
+  });
+});
+
+app.delete('/api/users/:id', requireAdmin, (req, res) => {
+  const targetId = Number(req.params.id);
+  const targetUser = getUserByIdStmt.get(targetId);
+
+  if (!targetUser) {
+    return res.status(404).json({ success: false, error: '사용자를 찾을 수 없습니다.' });
+  }
+
+  if (targetId === req.session.userId) {
+    return res.status(400).json({ success: false, error: '본인 계정은 삭제할 수 없습니다.' });
+  }
+
+  if (targetUser.role === 'admin' && countAdminsStmt.get().count <= 1) {
+    return res.status(400).json({ success: false, error: '마지막 관리자 계정은 삭제할 수 없습니다.' });
+  }
+
+  deleteUserStmt.run(targetId);
+
+  res.json({ success: true });
+});
 
 // ======================================================
 // 성장 데이터 자동 계산
