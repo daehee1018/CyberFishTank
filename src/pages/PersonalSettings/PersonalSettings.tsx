@@ -4,6 +4,10 @@ import FishSettings from '../../components/FishSettings';
 import type { AquariumDecorationType } from '../../context/AppContext';
 import Aquarium from '../../components/Aquarium';
 
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  'https://ggnu.site';
+
 const PersonalSettings: React.FC = () => {
   const {
     aquariumDecorations,
@@ -13,6 +17,60 @@ const PersonalSettings: React.FC = () => {
 
   const [selectedDecorationId, setSelectedDecorationId] =
     useState<string | null>(null);
+
+  const [sensorKey, setSensorKey] = useState<string | null>(null);
+  const [sensorKeyLoading, setSensorKeyLoading] = useState(true);
+  const [sensorKeyCopied, setSensorKeyCopied] = useState(false);
+
+  useEffect(() => {
+    const loadSensorKey = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/sensor-key`, {
+          credentials: 'include',
+        });
+        const data = await response.json();
+        if (data?.success) {
+          setSensorKey(data.sensorKey);
+        }
+      } catch (error) {
+        console.error('❌ 센서 키 조회 실패:', error);
+      } finally {
+        setSensorKeyLoading(false);
+      }
+    };
+
+    loadSensorKey();
+  }, []);
+
+  const rotateSensorKey = async () => {
+    if (!window.confirm('키를 재발급하면 기존 키를 쓰던 센서 장치는 다시 설정해야 합니다. 계속할까요?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/sensor-key/rotate`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (data?.success) {
+        setSensorKey(data.sensorKey);
+      }
+    } catch (error) {
+      console.error('❌ 센서 키 재발급 실패:', error);
+    }
+  };
+
+  const copySensorKey = async () => {
+    if (!sensorKey) return;
+    try {
+      await navigator.clipboard.writeText(sensorKey);
+      setSensorKeyCopied(true);
+      window.setTimeout(() => setSensorKeyCopied(false), 2000);
+    } catch (error) {
+      console.error('❌ 클립보드 복사 실패:', error);
+    }
+  };
 
   const previewRef =
     useRef<HTMLDivElement>(null);
@@ -455,6 +513,38 @@ const PersonalSettings: React.FC = () => {
 
           <div className="mt-4 text-sm text-slate-500">현재 배치 {aquariumDecorations.length}개</div>
 
+        </section>
+
+        <section className="rounded-[20px] border border-slate-200 bg-white p-5">
+          <div className="text-sm text-slate-500">개인 설정</div>
+          <div className="text-2xl font-semibold tracking-tight text-slate-900">
+            내 센서 연동
+          </div>
+          <p className="mt-2 text-sm text-slate-500">
+            RP2040 같은 본인 센서 하드웨어가 있다면, 아래 키를 그 장치의 설정에 넣어주세요.
+            이 키로 보낸 센서 데이터는 이 계정에만 저장되고 표시됩니다.
+          </p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-3">
+            <code className="flex-1 break-all text-sm text-slate-700">
+              {sensorKeyLoading ? '불러오는 중...' : sensorKey}
+            </code>
+            <button
+              type="button"
+              onClick={copySensorKey}
+              disabled={!sensorKey}
+              className="rounded-[10px] bg-slate-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:opacity-40"
+            >
+              {sensorKeyCopied ? '복사됨' : '복사'}
+            </button>
+            <button
+              type="button"
+              onClick={rotateSensorKey}
+              className="rounded-[10px] border border-red-200 px-4 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50"
+            >
+              재발급
+            </button>
+          </div>
         </section>
       </div>
     </div>

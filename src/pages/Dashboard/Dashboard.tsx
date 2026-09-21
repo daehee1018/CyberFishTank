@@ -45,6 +45,8 @@ const Dashboard: React.FC = () => {
 
   const [useMyCamera, setUseMyCamera] = useState(false);
   const [myCameraError, setMyCameraError] = useState('');
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState('');
 
   const myVideoRef = useRef<HTMLVideoElement>(null);
   const myCaptureCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -64,6 +66,22 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     return () => stopMyCamera();
+  }, []);
+
+  // 카메라가 여러 대면 고를 수 있게 목록을 가져온다.
+  // 권한을 아직 안 줬으면 라벨 없이 개수만 보일 수 있다.
+  const loadCameraDevices = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter((d) => d.kind === 'videoinput');
+      setAvailableCameras(cameras);
+    } catch (err) {
+      console.error('❌ 카메라 목록 조회 실패:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadCameraDevices();
   }, []);
 
   const sendMyCameraFrame = async () => {
@@ -107,7 +125,11 @@ const Dashboard: React.FC = () => {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          ...(selectedCameraId ? { deviceId: { exact: selectedCameraId } } : {}),
+        },
         audio: false,
       });
 
@@ -120,6 +142,9 @@ const Dashboard: React.FC = () => {
 
       setUseMyCamera(true);
       myCameraTimerRef.current = window.setInterval(sendMyCameraFrame, CAMERA_CAPTURE_INTERVAL_MS);
+
+      // 권한을 받은 뒤라 이제 카메라 이름(라벨)까지 정확히 보인다.
+      loadCameraDevices();
     } catch (err) {
       console.error('❌ 카메라 접근 실패:', err);
       setMyCameraError('카메라에 접근할 수 없습니다. 브라우저 권한을 확인해주세요.');
@@ -382,6 +407,21 @@ const Dashboard: React.FC = () => {
                   }
 
                 </button>
+              )}
+
+              {!useMyCamera && availableCameras.length > 1 && (
+                <select
+                  value={selectedCameraId}
+                  onChange={(event) => setSelectedCameraId(event.target.value)}
+                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600"
+                >
+                  <option value="">기본 카메라</option>
+                  {availableCameras.map((camera, index) => (
+                    <option key={camera.deviceId} value={camera.deviceId}>
+                      {camera.label || `카메라 ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
               )}
 
               <button

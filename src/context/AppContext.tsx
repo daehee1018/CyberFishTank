@@ -453,34 +453,50 @@ export const AppProvider: React.FC<{
     }
 
     setFishLoading(true);
+    let cancelled = false;
 
+    // 조회가 일시적으로 실패했다고 "물고기 없음"으로 단정지으면
+    // 서버가 잠깐 불안정할 때마다 이미 골라둔 물고기가 있는
+    // 계정도 선택 화면으로 튕겨나간다. 확실한 응답을 받을
+    // 때까지는 재시도하고, 그 전엔 로딩 상태를 유지한다.
     const loadFish = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/api/fish`, {
-          credentials: 'include',
-        });
+      while (!cancelled) {
+        try {
+          const response = await fetch(`${API_BASE}/api/fish`, {
+            credentials: 'include',
+          });
 
-        if (!response.ok) {
+          if (!response.ok) {
+            throw new Error(`상태 코드 ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (data.fish) {
+            setFishSpecies(data.fish.species);
+            setFishName(data.fish.fishName);
+          } else {
+            setFishSpecies(null);
+            setFishName('');
+          }
+
+          setFishLoading(false);
           return;
-        }
+        } catch (error) {
+          console.error('❌ 물고기 정보 조회 실패, 재시도합니다:', error);
 
-        const data = await response.json();
-
-        if (data.fish) {
-          setFishSpecies(data.fish.species);
-          setFishName(data.fish.fishName);
-        } else {
-          setFishSpecies(null);
-          setFishName('');
+          await new Promise((resolve) => {
+            window.setTimeout(resolve, 2000);
+          });
         }
-      } catch (error) {
-        console.error('❌ 물고기 정보 조회 실패:', error);
-      } finally {
-        setFishLoading(false);
       }
     };
 
     loadFish();
+
+    return () => {
+      cancelled = true;
+    };
   }, [currentUser]);
 
   const updateFish = async (species: string, name: string) => {
@@ -977,6 +993,51 @@ export const AppProvider: React.FC<{
   const [hourlyAverage, setHourlyAverage] =
     useState<HourlyAverage | null>(null);
 
+  // 센서 값은 원래 WebSocket 실시간 수신으로만 채워지는데,
+  // 서버가 막 재시작됐거나 다음 패킷이 아직 안 왔으면 그 사이엔
+  // 화면이 계속 비어있었다. 새로고침 시 마지막 저장값으로 먼저
+  // 채워두고, 실시간 값이 오면 그걸로 자연스럽게 덮어써진다.
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    const hydrateLatestSensorData = async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/sensor-data/latest`,
+          { credentials: 'include' }
+        );
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        const row = data?.data;
+
+        if (!row) {
+          return;
+        }
+
+        setDisplaySensorData({
+          temperature: Number(row.temperature ?? 0),
+          ph: Number(row.ph ?? 0),
+          water_level:
+            row.water_level_detected === '1' ? 1 : 0,
+          light: 0,
+          tds: Number(row.tds ?? 0),
+          turbidity: Number(row.turbidity_voltage ?? 0),
+          timestamp: row.timestamp,
+        });
+      } catch (error) {
+        console.error('❌ 초기 센서 데이터 조회 실패:', error);
+      }
+    };
+
+    hydrateLatestSensorData();
+  }, [currentUser]);
+
   const [hourlyAverages, setHourlyAverages] =
     useState<HourlyAverage[]>([]);
 
@@ -1061,6 +1122,13 @@ export const AppProvider: React.FC<{
         if (
           data.type === 'alert'
         ) {
+
+          if (
+            data.owner_user_id !== undefined &&
+            data.owner_user_id !== currentUserIdRef.current
+          ) {
+            return;
+          }
 
           const newAlert: Alert = {
             id:
@@ -1182,6 +1250,14 @@ export const AppProvider: React.FC<{
             data
           );
 
+          return;
+        }
+
+        // 센서도 물고기 데이터와 마찬가지로 소유 계정 것만 반영한다.
+        if (
+          data.owner_user_id !== undefined &&
+          data.owner_user_id !== currentUserIdRef.current
+        ) {
           return;
         }
 

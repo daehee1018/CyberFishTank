@@ -9,6 +9,7 @@ const { exec, execFile } = require('child_process');
 const Database = require('better-sqlite3');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const app = express();
 
@@ -131,12 +132,33 @@ authDb.prepare(`
 
 console.log('✅ users 테이블 확인 완료');
 
+// 개인 센서 하드웨어(RP2040 등)가 계정을 식별할 때 쓰는 키.
+// 로그인 세션과 달리 오래 켜져있는 장치용이라 만료 없는 고정 키로 둔다.
+try {
+  authDb.prepare('ALTER TABLE users ADD COLUMN sensor_key TEXT').run();
+  console.log('✅ users.sensor_key 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+
 const getUserByUsernameStmt = authDb.prepare(`
   SELECT id, username, password_hash, role FROM users WHERE username = ?
 `);
 
 const getUserByIdStmt = authDb.prepare(`
   SELECT id, username, role FROM users WHERE id = ?
+`);
+
+const getUserBySensorKeyStmt = authDb.prepare(`
+  SELECT id, username, role FROM users WHERE sensor_key = ?
+`);
+
+const getSensorKeyStmt = authDb.prepare(`
+  SELECT sensor_key FROM users WHERE id = ?
+`);
+
+const setSensorKeyStmt = authDb.prepare(`
+  UPDATE users SET sensor_key = ? WHERE id = ?
 `);
 
 const insertUserStmt = authDb.prepare(`
@@ -270,6 +292,25 @@ function requireAdmin(req, res, next) {
   if (req.session.role !== 'admin') {
     return res.status(403).json({ success: false, error: '관리자만 접근할 수 있습니다.' });
   }
+  next();
+}
+
+// 센서 장치(RP2040 등)용 인증. 브라우저 세션이 아니라
+// X-Sensor-Key 헤더로 계정을 식별한다.
+function requireSensorKey(req, res, next) {
+  const key = req.header('X-Sensor-Key');
+
+  if (!key) {
+    return res.status(401).json({ success: false, error: '센서 키가 필요합니다.' });
+  }
+
+  const user = getUserBySensorKeyStmt.get(key);
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: '유효하지 않은 센서 키입니다.' });
+  }
+
+  req.sensorUserId = user.id;
   next();
 }
 
@@ -423,6 +464,8 @@ app.post('/api/camera/frame', requireAuth, async (req, res) => {
   const fish = result?.fish;
 
   if (result?.success && fish) {
+    const userId = req.session.userId;
+
     try {
       insertYoloDataForUser.run({
         timestamp: new Date().toISOString(),
@@ -436,11 +479,41 @@ app.post('/api/camera/frame', requireAuth, async (req, res) => {
         tail_y: fish.keypoints?.tail?.[1] ?? null,
         state: fish.state ?? null,
         abnormal: fish.abnormal ? 1 : 0,
-        user_id: req.session.userId,
+        user_id: userId,
       });
     } catch (dbError) {
       console.error('❌ 개인 카메라 YOLO 데이터 저장 오류:', dbError);
     }
+
+    // 성장(몸길이) 원본 샘플 저장. calculate_growth.cjs가 나중에
+    // 이걸 모아서 daily_growth로 집계한다.
+    if (
+      Number.isFinite(fish.body_length_px) &&
+      fish.pose_conf > 0 &&
+      Array.isArray(fish.bbox)
+    ) {
+      const [x1, y1, x2, y2] = fish.bbox;
+
+      saveGrowthSample({
+        datetime: new Date().toISOString(),
+        event_id: 0,
+        body_length_px: fish.body_length_px,
+        bbox_w: x2 - x1,
+        bbox_h: y2 - y1,
+        head_x: fish.keypoints?.head?.[0] ?? null,
+        head_y: fish.keypoints?.head?.[1] ?? null,
+        tail_x: fish.keypoints?.tail?.[0] ?? null,
+        tail_y: fish.keypoints?.tail?.[1] ?? null,
+        pose_conf: fish.pose_conf,
+        side_tilt_deg: 0,
+      }, userId);
+    }
+
+    // 배뒤집힘이 3분 이상 지속될 때만 알림 (그 외 이상행동은 알림 없음)
+    handleAbnormalBehaviorAlert(
+      userId,
+      fish.abnormal ? fish.abnormal_reason : null
+    );
 
     // 이 계정으로 로그인된 다른 기기(예: 폰)도 같은 데이터를 보게
     // /posi와 동일한 형태로 WebSocket 브로드캐스트한다.
@@ -466,6 +539,31 @@ app.post('/api/camera/frame', requireAuth, async (req, res) => {
   }
 
   res.json(result);
+});
+
+// ============================================================
+// 개인 센서(RP2040 등) 연동 키
+//
+// 이 계정 소유의 센서 장치가 /api/sensor-data를 보낼 때
+// X-Sensor-Key 헤더에 이 값을 넣어서 어느 계정 것인지 식별한다.
+// ============================================================
+
+app.get('/api/sensor-key', requireAuth, (req, res) => {
+  let row = getSensorKeyStmt.get(req.session.userId);
+
+  if (!row || !row.sensor_key) {
+    const newKey = crypto.randomBytes(24).toString('hex');
+    setSensorKeyStmt.run(newKey, req.session.userId);
+    row = { sensor_key: newKey };
+  }
+
+  res.json({ success: true, sensorKey: row.sensor_key });
+});
+
+app.post('/api/sensor-key/rotate', requireAuth, (req, res) => {
+  const newKey = crypto.randomBytes(24).toString('hex');
+  setSensorKeyStmt.run(newKey, req.session.userId);
+  res.json({ success: true, sensorKey: newKey });
 });
 
 // ============================================================
@@ -568,73 +666,74 @@ function runDailyGrowthCalculation() {
 
   console.log('');
   console.log('============================================');
-  console.log('🐟 자동 성장 데이터 계산 시작');
+  console.log('🐟 자동 성장 데이터 계산 시작 (전체 계정)');
   console.log(`📅 대상 날짜: ${targetDate}`);
   console.log('============================================');
 
-  // calculate_growth.cjs 경로
   const scriptPath =
     path.join(
       __dirname,
       'calculate_growth.cjs'
     );
 
-  // 물리 어항은 admin 계정 소유로 계산한다.
-  const growthOwner =
-    getUserByUsernameStmt.get(process.env.ADMIN_USERNAME || 'admin');
+  // 계정마다 각자 소유의 성장 샘플을 따로 집계한다.
+  runScriptForAllUsers(scriptPath, targetDate, '성장');
 
-  // calculate_growth.cjs 실행
-  execFile(
-    'node',
-    [
-      scriptPath,
-      targetDate,
-      String(growthOwner ? growthOwner.id : '')
-    ],
-    (
-      error,
-      stdout,
-      stderr
-    ) => {
+}
 
-      if (error) {
+// 등록된 모든 계정에 대해 순서대로(동시에 같은 DB 파일에
+// 쓰지 않도록) 배치 스크립트를 실행한다.
+function runScriptForAllUsers(scriptPath, targetDate, label) {
 
-        console.error(
-          '❌ 자동 성장 데이터 계산 실패:',
-          error.message
-        );
+  const users = listUsersStmt.all();
+  let index = 0;
 
-        return;
+  const runNext = () => {
 
-      }
-
-      if (stderr) {
-
-        console.error(
-          '⚠️ 성장 계산 오류 메시지:',
-          stderr
-        );
-
-      }
+    if (index >= users.length) {
 
       console.log(
-        stdout
+        `✅ ${label} 계산 완료 (전체 ${users.length}개 계정)`
       );
 
-      console.log(
-        '============================================'
-      );
-
-      console.log(
-        '✅ 자동 성장 데이터 계산 완료'
-      );
-
-      console.log(
-        '============================================'
-      );
+      return;
 
     }
-  );
+
+    const user = users[index];
+    index += 1;
+
+    execFile(
+      'node',
+      [scriptPath, targetDate, String(user.id)],
+      (error, stdout, stderr) => {
+
+        if (error) {
+
+          console.error(
+            `❌ ${label} 계산 실패 (계정: ${user.username}):`,
+            error.message
+          );
+
+        } else {
+
+          if (stderr) {
+            console.error(`⚠️ ${label} 계산 경고 (계정: ${user.username}):`, stderr);
+          }
+
+          console.log(`--- ${label} 계산 (계정: ${user.username}) ---`);
+          console.log(stdout);
+
+        }
+
+        runNext();
+
+      }
+    );
+
+  };
+
+  runNext();
 
 }
 
@@ -692,7 +791,7 @@ function runDailyActivityCalculation() {
   );
 
   console.log(
-    '🏊 자동 활동량 데이터 계산 시작'
+    '🏊 자동 활동량 데이터 계산 시작 (전체 계정)'
   );
 
   console.log(
@@ -712,69 +811,8 @@ function runDailyActivityCalculation() {
     );
 
 
-  // 물리 어항은 admin 계정 소유로 계산한다.
-  const activityOwner =
-    getUserByUsernameStmt.get(process.env.ADMIN_USERNAME || 'admin');
-
-  // calculate_activity.cjs 실행
-  execFile(
-    'node',
-    [
-      scriptPath,
-      targetDate,
-      String(activityOwner ? activityOwner.id : '')
-    ],
-    (
-      error,
-      stdout,
-      stderr
-    ) => {
-
-      if (
-        error
-      ) {
-
-        console.error(
-          '❌ 자동 활동량 데이터 계산 실패:',
-          error.message
-        );
-
-        return;
-
-      }
-
-
-      if (
-        stderr
-      ) {
-
-        console.error(
-          '⚠️ 활동량 계산 오류 메시지:',
-          stderr
-        );
-
-      }
-
-
-      console.log(
-        stdout
-      );
-
-
-      console.log(
-        '============================================'
-      );
-
-      console.log(
-        '✅ 자동 활동량 데이터 계산 완료'
-      );
-
-      console.log(
-        '============================================'
-      );
-
-    }
-  );
+  // 계정마다 각자 소유의 yolo_data를 따로 집계한다.
+  runScriptForAllUsers(scriptPath, targetDate, '활동량');
 
 }
 
@@ -994,6 +1032,26 @@ db.prepare(`
 
 console.log('✅ sensor_data 테이블 확인 완료');
 
+// 계정별 센서 하드웨어 분리를 위해 user_id 추가.
+// 기존(admin 물리 센서) 데이터는 admin 계정으로 이전한다.
+const sensorMigrationAdmin =
+  getUserByUsernameStmt.get(process.env.ADMIN_USERNAME || 'admin');
+const sensorMigrationAdminId =
+  sensorMigrationAdmin ? sensorMigrationAdmin.id : null;
+
+try {
+  db.prepare('ALTER TABLE sensor_data ADD COLUMN user_id INTEGER').run();
+  console.log('✅ sensor_data.user_id 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+try {
+  db.prepare('UPDATE sensor_data SET user_id = ? WHERE user_id IS NULL')
+    .run(sensorMigrationAdminId);
+} catch (error) {
+  console.error('❌ sensor_data user_id 백필 오류:', error);
+}
+
 // ============================================================
 // 알람 데이터 테이블 추가 (sensor.db)
 // ============================================================
@@ -1007,6 +1065,19 @@ db.prepare(`
     created_at TEXT NOT NULL
   )
 `).run();
+
+try {
+  db.prepare('ALTER TABLE alerts ADD COLUMN user_id INTEGER').run();
+  console.log('✅ alerts.user_id 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+try {
+  db.prepare('UPDATE alerts SET user_id = ? WHERE user_id IS NULL')
+    .run(sensorMigrationAdminId);
+} catch (error) {
+  console.error('❌ alerts user_id 백필 오류:', error);
+}
 
 db.prepare(`
   CREATE TABLE IF NOT EXISTS alert_processing_state (
@@ -1023,8 +1094,8 @@ db.prepare(`
 console.log('✅ alerts 테이블 확인 완료');
 
 const insertAlertStmt = db.prepare(`
-  INSERT INTO alerts (title, time, detail, type, created_at)
-  VALUES (@title, @time, @detail, @type, @created_at)
+  INSERT INTO alerts (title, time, detail, type, created_at, user_id)
+  VALUES (@title, @time, @detail, @type, @created_at, @user_id)
 `);
 
 const getLastProcessedSensorIdStmt = db.prepare(`
@@ -1042,7 +1113,7 @@ const updateLastProcessedSensorIdStmt = db.prepare(`
 const getLatestAlertByTypeStmt = db.prepare(`
   SELECT id, title, time, detail, type
   FROM alerts
-  WHERE type = ?
+  WHERE type = ? AND user_id = ?
   ORDER BY id DESC
   LIMIT 1
 `);
@@ -1061,6 +1132,7 @@ const findRecentAlertStmt = db.prepare(`
   SELECT id, created_at
   FROM alerts
   WHERE type = ?
+    AND user_id = ?
     AND created_at >= ?
   ORDER BY id DESC
   LIMIT 1
@@ -1769,15 +1841,13 @@ const SENSOR_SAVE_INTERVAL =
   10 * 60 * 1000;
 
 
-// 마지막으로 DB에 저장한 시간
+// 계정별로 따로 관리한다 (계정마다 자기 센서 하드웨어를 가질 수 있음).
 
-let lastSensorSaveTime = 0;
+// 계정별 마지막 DB 저장 시간
+const lastSensorSaveTimeByUser = new Map();
 
-
-// 10분 동안 들어온 데이터 중
-// 가장 최신 데이터를 임시 보관
-
-let pendingSensorData = null;
+// 계정별로 10분 동안 들어온 데이터 중 가장 최신 데이터를 임시 보관
+const pendingSensorDataByUser = new Map();
 
 
 // ============================================================
@@ -1808,7 +1878,9 @@ const insertSensorData =
 
       turbidity_warning,
 
-      water_level_detected
+      water_level_detected,
+
+      user_id
 
     )
 
@@ -1834,7 +1906,9 @@ const insertSensorData =
 
       @turbidity_warning,
 
-      @water_level_detected
+      @water_level_detected,
+
+      @user_id
 
     )
   `);
@@ -3384,18 +3458,21 @@ function normalizeSensorData(data) {
 // 센서 데이터 DB 저장 함수
 // ============================================================
 
-function saveSensorData(data) {
+function saveSensorData(data, userId) {
 
   try {
 
     const result =
-      insertSensorData.run(
-        data
-      );
+      insertSensorData.run({
+        ...data,
+        user_id: userId,
+      });
 
 
-    lastSensorSaveTime =
-      Date.now();
+    lastSensorSaveTimeByUser.set(
+      userId,
+      Date.now()
+    );
 
 
     console.log('');
@@ -3460,11 +3537,42 @@ function formatAlertTime(date = new Date()) {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
+// 이상행동 중 "배뒤집힘"만 알림 대상이고, 그마저도 3분 이상
+// 연속으로 지속될 때만 울린다 (놓침/급가속/저활동은 알림 없음).
+const FLIPPED_POSE_ALERT_DURATION = 3 * 60 * 1000;
+const flippedPoseSinceByUser = new Map();
+
+function handleAbnormalBehaviorAlert(userId, abnormalReason) {
+  if (abnormalReason !== 'flipped_pose') {
+    flippedPoseSinceByUser.delete(userId);
+    return;
+  }
+
+  const now = Date.now();
+  const startedAt = flippedPoseSinceByUser.get(userId);
+
+  if (startedAt === undefined) {
+    flippedPoseSinceByUser.set(userId, now);
+    return;
+  }
+
+  if (now - startedAt >= FLIPPED_POSE_ALERT_DURATION) {
+    createAlertIfAllowed({
+      type: 'fish-flipped-pose',
+      title: '배뒤집힘 지속 경고',
+      detail: '물고기가 3분 이상 뒤집힌 자세로 감지되고 있습니다.',
+      eventTime: new Date().toISOString(),
+      userId
+    });
+  }
+}
+
 function createAlertIfAllowed({
   title,
   detail,
   type,
-  eventTime
+  eventTime,
+  userId
 }) {
   const eventDate = new Date(eventTime);
   const eventTimeMs = eventDate.getTime();
@@ -3473,11 +3581,14 @@ function createAlertIfAllowed({
     return null;
   }
 
+  // 디바운스/조회는 계정별로 나눠야 서로 안 섞인다.
+  const debounceKey = `${userId}:${type}`;
+
   // ============================================================
   // 1. 메모리 기반 5분 디바운싱
   // ============================================================
 
-  const lastMemoryTime = lastAlertTimeByType.get(type);
+  const lastMemoryTime = lastAlertTimeByType.get(debounceKey);
 
   if (
     lastMemoryTime !== undefined &&
@@ -3491,7 +3602,7 @@ function createAlertIfAllowed({
   // 서버 재시작 후에도 중복 방지
   // ============================================================
 
-  const latestAlert = getLatestAlertByTypeStmt.get(type);
+  const latestAlert = getLatestAlertByTypeStmt.get(type, userId);
 
   if (latestAlert) {
     const latestTimeMs = new Date(latestAlert.time).getTime();
@@ -3501,7 +3612,7 @@ function createAlertIfAllowed({
       eventTimeMs >= latestTimeMs &&
       eventTimeMs - latestTimeMs < ALERT_COOLDOWN
     ) {
-      lastAlertTimeByType.set(type, latestTimeMs);
+      lastAlertTimeByType.set(debounceKey, latestTimeMs);
       return null;
     }
   }
@@ -3517,7 +3628,8 @@ function createAlertIfAllowed({
     time: formattedTime,
     detail,
     type,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    user_id: userId
   });
 
   const newAlert = {
@@ -3528,14 +3640,15 @@ function createAlertIfAllowed({
     type
   };
 
-  lastAlertTimeByType.set(type, eventTimeMs);
+  lastAlertTimeByType.set(debounceKey, eventTimeMs);
 
   // ============================================================
-  // 4. WebSocket 브로드캐스트
+  // 4. WebSocket 브로드캐스트 (본인 계정에만 적용되도록 owner 포함)
   // ============================================================
 
   const alertMessage = JSON.stringify({
     type: 'alert',
+    owner_user_id: userId,
     alert: newAlert
   });
 
@@ -3548,7 +3661,7 @@ function createAlertIfAllowed({
   return newAlert;
 }
 
-function evaluateSensorAlert(sensorData) {
+function evaluateSensorAlert(sensorData, userId) {
   const eventTime = sensorData.timestamp || new Date().toISOString();
 
   const temperature =
@@ -3580,14 +3693,16 @@ function evaluateSensorAlert(sensorData) {
         type: 'temperature-increase',
         title: '수온 상승 경고',
         detail: '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도',
-        eventTime
+        eventTime,
+        userId
       });
     } else if (temperature < 24) {
       createAlertIfAllowed({
         type: 'temperature-decrease',
         title: '수온 저하 경고',
         detail: '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도',
-        eventTime
+        eventTime,
+        userId
       });
     }
   }
@@ -3602,14 +3717,16 @@ function evaluateSensorAlert(sensorData) {
         type: 'ph-increase',
         title: 'pH 상승 경고',
         detail: 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7',
-        eventTime
+        eventTime,
+        userId
       });
     } else if (ph < 6) {
       createAlertIfAllowed({
         type: 'ph-decrease',
         title: 'pH 하락 경고',
         detail: 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7',
-        eventTime
+        eventTime,
+        userId
       });
     }
   }
@@ -3626,7 +3743,8 @@ function evaluateSensorAlert(sensorData) {
       type: 'water-decrease',
       title: '수위 저하 경고',
       detail: '수위가 기준보다 낮습니다.',
-      eventTime
+      eventTime,
+      userId
     });
   }
 }
@@ -3653,7 +3771,8 @@ function processStoredSensorAlerts() {
         timestamp,
         temperature,
         ph,
-        water_level_detected
+        water_level_detected,
+        user_id
       FROM sensor_data
       WHERE id > ?
       ORDER BY id ASC
@@ -3681,7 +3800,7 @@ function processStoredSensorAlerts() {
         ph: row.ph,
         water_level_detected:
           row.water_level_detected
-      });
+      }, row.user_id);
 
       latestProcessedId = Number(row.id);
     }
@@ -3747,16 +3866,19 @@ app.post("/api/feed", async (req, res) => {
 
 app.post(
   '/api/sensor-data',
+  requireSensorKey,
   (req, res) => {
 
     try {
+
+      const userId = req.sensorUserId;
 
       const sensorData =
         normalizeSensorData(
           req.body
         );
 
-      evaluateSensorAlert(sensorData);
+      evaluateSensorAlert(sensorData, userId);
 
       // --------------------------------------------------------
       // 서버에는 보정된 센서 데이터 표시
@@ -3785,8 +3907,10 @@ app.post(
       // 가장 최신 데이터만 유지
       // --------------------------------------------------------
 
-      pendingSensorData =
-        sensorData;
+      pendingSensorDataByUser.set(
+        userId,
+        sensorData
+      );
 
       // --------------------------------------------------------
       // WebSocket으로 최신 센서 데이터 전송
@@ -3801,12 +3925,14 @@ app.post(
       //
       // DB 저장 주기와 관계없이
       // 센서가 들어올 때마다 최신 데이터를 전송
+      // owner_user_id를 넣어서 본인 계정에만 반영되게 한다.
       // --------------------------------------------------------
 
       const sensorMessage =
-        JSON.stringify(
-          sensorData
-        );
+        JSON.stringify({
+          ...sensorData,
+          owner_user_id: userId,
+        });
 
 
       wss.clients.forEach(
@@ -3827,29 +3953,35 @@ app.post(
       );
 
       // --------------------------------------------------------
-      // DB 저장 여부 확인
+      // DB 저장 여부 확인 (계정별)
       // --------------------------------------------------------
 
       const now =
         Date.now();
 
+      const lastSaveTime =
+        lastSensorSaveTimeByUser.get(userId) || 0;
 
       const elapsed =
         now -
-        lastSensorSaveTime;
+        lastSaveTime;
+
+      const pendingForUser =
+        pendingSensorDataByUser.get(userId);
 
 
       // --------------------------------------------------------
-      // 첫 번째 데이터라면 즉시 저장
+      // 이 계정의 첫 번째 데이터라면 즉시 저장
       // --------------------------------------------------------
 
       if (
-        lastSensorSaveTime === 0
+        lastSaveTime === 0
       ) {
 
         const savedSensorId =
           saveSensorData(
-            pendingSensorData
+            pendingForUser,
+            userId
           );
 
         if (savedSensorId !== null) {
@@ -3860,8 +3992,7 @@ app.post(
 
         }
 
-        pendingSensorData =
-          null;
+        pendingSensorDataByUser.delete(userId);
 
       }
 
@@ -3876,12 +4007,13 @@ app.post(
       ) {
 
         if (
-          pendingSensorData
+          pendingForUser
         ) {
 
           const savedSensorId =
             saveSensorData(
-              pendingSensorData
+              pendingForUser,
+              userId
             );
 
           if (
@@ -3894,8 +4026,7 @@ app.post(
 
           }
 
-          pendingSensorData =
-            null;
+          pendingSensorDataByUser.delete(userId);
 
         }
 
@@ -3945,6 +4076,7 @@ app.post(
 
 app.get(
   '/api/sensor-data',
+  requireAuth,
   (req, res) => {
 
     try {
@@ -3979,9 +4111,11 @@ app.get(
 
           FROM sensor_data
 
+          WHERE user_id = ?
+
           ORDER BY timestamp ASC
 
-        `).all();
+        `).all(req.session.userId);
 
 
       res.json({
@@ -4024,6 +4158,7 @@ app.get(
 
 app.get(
   '/api/sensor-data/latest',
+  requireAuth,
   (req, res) => {
 
     try {
@@ -4058,11 +4193,13 @@ app.get(
 
           FROM sensor_data
 
+          WHERE user_id = ?
+
           ORDER BY timestamp DESC
 
           LIMIT 1
 
-        `).get();
+        `).get(req.session.userId);
 
 
       res.json({
@@ -4107,6 +4244,7 @@ app.get(
 
 app.get(
   '/api/sensor-data/recent',
+  requireAuth,
   (req, res) => {
 
     try {
@@ -4165,11 +4303,13 @@ app.get(
 
           FROM sensor_data
 
+          WHERE user_id = ?
+
           ORDER BY timestamp DESC
 
           LIMIT ?
 
-        `).all(limit);
+        `).all(req.session.userId, limit);
 
 
       rows.reverse();
@@ -4221,6 +4361,7 @@ app.get(
 
 app.get(
   '/api/sensor-data/range',
+  requireAuth,
   (req, res) => {
 
     try {
@@ -4280,13 +4421,16 @@ app.get(
 
           FROM sensor_data
 
-          WHERE timestamp >= ?
+          WHERE user_id = ?
+
+          AND timestamp >= ?
 
           AND timestamp <= ?
 
           ORDER BY timestamp ASC
 
         `).all(
+          req.session.userId,
           start,
           end
         );
@@ -4332,6 +4476,7 @@ app.get(
 
 app.get(
   '/api/sensor-data/count',
+  requireAuth,
   (req, res) => {
 
     try {
@@ -4340,7 +4485,8 @@ app.get(
         db.prepare(`
           SELECT COUNT(*) AS count
           FROM sensor_data
-        `).get();
+          WHERE user_id = ?
+        `).get(req.session.userId);
 
 
       res.json({
@@ -4377,9 +4523,10 @@ app.get(
 // ============================================================
 // 알람 저장 및 조회 API
 // ============================================================
-app.post('/api/alerts', (req, res) => {
+app.post('/api/alerts', requireAuth, (req, res) => {
   try {
     const { title, time, detail, type } = req.body || {};
+    const userId = req.session.userId;
 
     // 필수값 및 문자열 형식 최소 검증
     if (
@@ -4395,7 +4542,8 @@ app.post('/api/alerts', (req, res) => {
     }
 
     const nowMs = Date.now();
-    const lastAlertTime = lastAlertTimeByType.get(type);
+    const debounceKey = `${userId}:${type}`;
+    const lastAlertTime = lastAlertTimeByType.get(debounceKey);
 
     // --------------------------------------------------------
     // 1차: 메모리 기반 5분 디바운싱
@@ -4416,10 +4564,10 @@ app.post('/api/alerts', (req, res) => {
     // 서버 재시작 후에도 중복 저장을 방지함.
     // --------------------------------------------------------
     const cooldownStart = new Date(nowMs - ALERT_COOLDOWN).toISOString();
-    const recentAlert = findRecentAlertStmt.get(type, cooldownStart);
+    const recentAlert = findRecentAlertStmt.get(type, userId, cooldownStart);
 
     if (recentAlert) {
-      lastAlertTimeByType.set(type, nowMs);
+      lastAlertTimeByType.set(debounceKey, nowMs);
 
       return res.status(200).json({
         success: false,
@@ -4435,11 +4583,12 @@ app.post('/api/alerts', (req, res) => {
       time: time.trim(),
       detail: detail.trim(),
       type: type.trim(),
-      created_at: createdAt
+      created_at: createdAt,
+      user_id: userId
     });
 
     // 저장 성공 후에만 마지막 알람 시간을 갱신
-    lastAlertTimeByType.set(type.trim(), nowMs);
+    lastAlertTimeByType.set(debounceKey, nowMs);
 
     const newAlert = {
       id: Number(result.lastInsertRowid),
@@ -4452,6 +4601,7 @@ app.post('/api/alerts', (req, res) => {
     // WebSocket으로 연결된 모든 클라이언트에게 실시간 브로드캐스트
     const alertMessage = JSON.stringify({
       type: 'alert',
+      owner_user_id: userId,
       alert: newAlert
     });
 
@@ -4475,14 +4625,15 @@ app.post('/api/alerts', (req, res) => {
   }
 });
 
-app.get('/api/alerts', (req, res) => {
+app.get('/api/alerts', requireAuth, (req, res) => {
   try {
     const rows = db.prepare(`
       SELECT id, title, time, detail, type
       FROM alerts
+      WHERE user_id = ?
       ORDER BY id DESC
       LIMIT 100
-    `).all();
+    `).all(req.session.userId);
 
     return res.json(rows);
   } catch (error) {
@@ -4599,7 +4750,11 @@ app.post(
       abnormal:
         Boolean(
           data?.abnormal
-        )
+        ),
+
+      abnormal_reason:
+        data?.abnormal_reason ||
+        null
 
     };
 
@@ -4723,6 +4878,17 @@ app.post(
         error
       );
 
+    }
+
+    // ========================================================
+    // 배뒤집힘이 3분 이상 지속될 때만 알림 (그 외 이상행동은 알림 없음)
+    // ========================================================
+
+    if (physicalTankOwner) {
+      handleAbnormalBehaviorAlert(
+        physicalTankOwner.id,
+        payload.abnormal ? payload.abnormal_reason : null
+      );
     }
 
 

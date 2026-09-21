@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
 
@@ -26,6 +26,15 @@ const FishSelect: React.FC = () => {
   const [saving, setSaving] = useState(false);
 
   const hasExistingFish = Boolean(fishSpecies);
+
+  // 일시적인 오류 등으로 이미 물고기가 있는 계정이 이 화면으로
+  // 잘못 온 경우, 수동으로 "돌아가기"를 누르지 않아도 되게
+  // 자동으로 대시보드로 돌려보낸다.
+  useEffect(() => {
+    if (hasExistingFish) {
+      navigate('/', { replace: true });
+    }
+  }, [hasExistingFish, navigate]);
 
   const handleSelect = async (species: SpeciesOption) => {
     if (!species.available) {
