@@ -195,6 +195,10 @@ interface AppContextType {
 
   fishSpecies: string | null;
 
+  // 로그인 후 /api/fish 조회가 끝났는지 여부.
+  // 물고기 미설정 계정을 /select-fish로 보내는 판단에 사용된다.
+  fishLoading: boolean;
+
   updateFish: (
     species: string,
     name: string
@@ -338,6 +342,14 @@ export const AppProvider: React.FC<{
   const [currentUser, setCurrentUser] =
     useState<AuthUser | null>(null);
 
+  // WebSocket onmessage 클로저(마운트 시 1회 생성)가
+  // 로그인 상태 변경을 즉시 반영할 수 있도록 ref로도 들고 있는다.
+  const currentUserIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUser?.id ?? null;
+  }, [currentUser]);
+
   const [authLoading, setAuthLoading] =
     useState(true);
 
@@ -436,8 +448,11 @@ export const AppProvider: React.FC<{
 
   useEffect(() => {
     if (!currentUser) {
+      setFishLoading(false);
       return;
     }
+
+    setFishLoading(true);
 
     const loadFish = async () => {
       try {
@@ -460,6 +475,8 @@ export const AppProvider: React.FC<{
         }
       } catch (error) {
         console.error('❌ 물고기 정보 조회 실패:', error);
+      } finally {
+        setFishLoading(false);
       }
     };
 
@@ -506,6 +523,9 @@ export const AppProvider: React.FC<{
   const [fishSpecies, setFishSpecies] =
     useState<string | null>(null);
 
+  const [fishLoading, setFishLoading] =
+    useState(true);
+
   const [notificationsEnabled, setNotificationsEnabled] =
     useState(true);
 
@@ -540,16 +560,14 @@ export const AppProvider: React.FC<{
   // 어항 커스터마이징
   // ====================================================
 
-  const [
-    aquariumDecorations,
-    setAquariumDecorations
-  ] = useState<AquariumDecoration[]>(() => {
-    try {
-      const saved =
-        localStorage.getItem(
-          'cyber-fishtank-aquarium-decorations'
-        );
+  // 계정별로 분리 저장하기 위해 유저 id를 key에 포함시킨다.
+  const getDecorationsKey = (userId: number | null | undefined) =>
+    userId
+      ? `cyber-fishtank-aquarium-decorations-${userId}`
+      : null;
 
+  const parseDecorations = (saved: string | null): AquariumDecoration[] => {
+    try {
       if (!saved) {
         return [];
       }
@@ -577,12 +595,38 @@ export const AppProvider: React.FC<{
       );
       return [];
     }
-  });
+  };
+
+  const [
+    aquariumDecorations,
+    setAquariumDecorations
+  ] = useState<AquariumDecoration[]>([]);
+
+  // currentUser가 바뀔 때(로그인/로그아웃/계정 전환)마다
+  // 해당 계정의 배치를 새로 불러온다.
+  useEffect(() => {
+    const key = getDecorationsKey(currentUser?.id);
+
+    if (!key) {
+      setAquariumDecorations([]);
+      return;
+    }
+
+    setAquariumDecorations(
+      parseDecorations(localStorage.getItem(key))
+    );
+  }, [currentUser?.id]);
 
   useEffect(() => {
+    const key = getDecorationsKey(currentUser?.id);
+
+    if (!key) {
+      return;
+    }
+
     try {
       localStorage.setItem(
-        'cyber-fishtank-aquarium-decorations',
+        key,
         JSON.stringify(aquariumDecorations)
       );
     } catch (error) {
@@ -1070,6 +1114,16 @@ export const AppProvider: React.FC<{
           data.tail !== undefined;
 
         if (isYoloData) {
+
+          // 이 물리 어항은 owner_user_id 계정 소유다.
+          // 로그인한 계정이 그 소유자가 아니면 이 데이터를 무시한다
+          // (본인 카메라를 켠 경우에만 자기 데이터를 따로 받는다).
+          if (
+            data.owner_user_id !== undefined &&
+            data.owner_user_id !== currentUserIdRef.current
+          ) {
+            return;
+          }
 
           const newFishData: FishData = {
 
@@ -1757,6 +1811,7 @@ export const AppProvider: React.FC<{
     setFishName,
 
     fishSpecies,
+    fishLoading,
     updateFish,
 
     notificationsEnabled,

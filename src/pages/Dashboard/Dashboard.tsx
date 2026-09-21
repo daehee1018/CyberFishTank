@@ -1,7 +1,14 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { Fish2D } from '../../components/Fish2D';
 import Aquarium from '../../components/Aquarium';
+
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  'https://ggnu.site';
+
+// 내 카메라 프레임 전송 주기(ms)
+const CAMERA_CAPTURE_INTERVAL_MS = 400;
 
 // import { Fish3D } from '../../components/Fish3D';
 // import { Canvas } from '@react-three/fiber';
@@ -25,6 +32,99 @@ const Dashboard: React.FC = () => {
     displaySensorData,
     controlNotice,
   } = useAppContext();
+
+  // ====================================================
+  // 내 카메라 연동
+  //
+  // "내 카메라 켜기"는 이 기기가 촬영을 맡아서 프레임을
+  // 서버로 보낸다는 뜻일 뿐이다. 화면에 그리는 건 항상
+  // fishData(WebSocket, owner_user_id로 필터링됨) 하나로
+  // 통일한다 — 그래야 촬영 중인 기기가 아닌 다른 기기
+  // (예: 폰)에서 봐도 같은 데이터가 보인다.
+  // ====================================================
+
+  const [useMyCamera, setUseMyCamera] = useState(false);
+  const [myCameraError, setMyCameraError] = useState('');
+
+  const myVideoRef = useRef<HTMLVideoElement>(null);
+  const myCaptureCanvasRef = useRef<HTMLCanvasElement>(null);
+  const myStreamRef = useRef<MediaStream | null>(null);
+  const myCameraTimerRef = useRef<number | null>(null);
+  const myCameraSendingRef = useRef(false);
+
+  const stopMyCamera = () => {
+    if (myCameraTimerRef.current !== null) {
+      window.clearInterval(myCameraTimerRef.current);
+      myCameraTimerRef.current = null;
+    }
+    myStreamRef.current?.getTracks().forEach((track) => track.stop());
+    myStreamRef.current = null;
+    setUseMyCamera(false);
+  };
+
+  useEffect(() => {
+    return () => stopMyCamera();
+  }, []);
+
+  const sendMyCameraFrame = async () => {
+    const video = myVideoRef.current;
+    const canvas = myCaptureCanvasRef.current;
+
+    if (!video || !canvas || myCameraSendingRef.current || video.readyState < 2) {
+      return;
+    }
+
+    myCameraSendingRef.current = true;
+
+    try {
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+
+      // 결과는 서버가 WebSocket으로 브로드캐스트해서 fishData에 반영된다.
+      // (이 기기 포함, 같은 계정으로 로그인한 모든 기기가 받음)
+      await fetch(`${API_BASE}/api/camera/frame`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+    } catch (err) {
+      console.error('❌ 내 카메라 프레임 전송 실패:', err);
+    } finally {
+      myCameraSendingRef.current = false;
+    }
+  };
+
+  const startMyCamera = async () => {
+    setMyCameraError('');
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+
+      myStreamRef.current = stream;
+
+      if (myVideoRef.current) {
+        myVideoRef.current.srcObject = stream;
+        await myVideoRef.current.play();
+      }
+
+      setUseMyCamera(true);
+      myCameraTimerRef.current = window.setInterval(sendMyCameraFrame, CAMERA_CAPTURE_INTERVAL_MS);
+    } catch (err) {
+      console.error('❌ 카메라 접근 실패:', err);
+      setMyCameraError('카메라에 접근할 수 없습니다. 브라우저 권한을 확인해주세요.');
+    }
+  };
 
   // ====================================================
   // 빠른 제어
@@ -154,7 +254,7 @@ const Dashboard: React.FC = () => {
 
   return (
 
-    <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
 
       {/* ==================================================
           왼쪽 빠른 제어
@@ -239,7 +339,9 @@ const Dashboard: React.FC = () => {
               <div className="text-2xl font-semibold tracking-tight text-slate-900">
 
                 {
-                  isLiveMode
+                  useMyCamera
+                    ? '내 카메라로 실시간 추적 중'
+                    : isLiveMode
                     ? '실시간 하드웨어 피드 스트리밍'
                     : '지능형 개체 미러링 화면'
                 }
@@ -249,40 +351,59 @@ const Dashboard: React.FC = () => {
             </div>
 
 
-            {/* -------------------------------------------
-                Live Render / Digital Twin 버튼
-                ------------------------------------------- */}
+            <div className="flex flex-wrap items-center gap-2">
 
-            <button
-              onClick={() =>
-                setIsLiveMode(
-                  !isLiveMode
-                )
-              }
-              className="
-                rounded-full
-                border
-                border-slate-200
-                bg-slate-50
-                px-4
-                py-2
-                text-sm
-                font-medium
-                text-slate-600
-                transition
-                hover:bg-slate-100
-              "
-            >
+              {!useMyCamera && (
+                <button
+                  onClick={() =>
+                    setIsLiveMode(
+                      !isLiveMode
+                    )
+                  }
+                  className="
+                    rounded-full
+                    border
+                    border-slate-200
+                    bg-slate-50
+                    px-4
+                    py-2
+                    text-sm
+                    font-medium
+                    text-slate-600
+                    transition
+                    hover:bg-slate-100
+                  "
+                >
 
-              {
-                isLiveMode
-                  ? 'Digital Twin'
-                  : 'Live Render'
-              }
+                  {
+                    isLiveMode
+                      ? 'Digital Twin'
+                      : 'Live Render'
+                  }
 
-            </button>
+                </button>
+              )}
+
+              <button
+                onClick={useMyCamera ? stopMyCamera : startMyCamera}
+                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                  useMyCamera
+                    ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {useMyCamera ? '내 카메라 끄기' : '내 카메라 켜기'}
+              </button>
+
+            </div>
 
           </div>
+
+          {myCameraError && (
+            <div className="mb-4 rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {myCameraError}
+            </div>
+          )}
 
 
           {/* =================================================
@@ -303,7 +424,7 @@ const Dashboard: React.FC = () => {
                 실제 카메라 화면
                 --------------------------------------------- */}
 
-            {isLiveMode ? (
+            {isLiveMode && !useMyCamera ? (
 
               <img
                 src="http://192.168.31.151:5000/video_feed"
@@ -344,6 +465,13 @@ const Dashboard: React.FC = () => {
 
             )}
 
+            {useMyCamera && (
+              <div className="absolute right-3 top-3 z-10 h-24 w-32 overflow-hidden rounded-[10px] border border-white/70 shadow-lg">
+                <video ref={myVideoRef} className="h-full w-full object-cover" muted playsInline />
+              </div>
+            )}
+            <canvas ref={myCaptureCanvasRef} className="hidden" />
+
           </div>
 
         </div>
@@ -353,7 +481,7 @@ const Dashboard: React.FC = () => {
             하단 센서 상태
             ================================================= */}
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
 
           {bottomStats.map(
             (item) => (
@@ -365,8 +493,10 @@ const Dashboard: React.FC = () => {
                   border
                   border-slate-200
                   bg-white
-                  px-5
-                  py-4
+                  px-3
+                  py-3
+                  sm:px-5
+                  sm:py-4
                   text-center
                   text-slate-900
                   shadow-[0_8px_24px_rgba(15,23,42,0.04)]

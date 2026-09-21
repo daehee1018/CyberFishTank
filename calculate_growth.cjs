@@ -100,20 +100,27 @@ const MODEL_VERSION =
 const targetDate =
   process.argv[2];
 
+// 어느 계정 소유 데이터를 계산할지. 계정별로 growth_samples/daily_growth가
+// 분리되어 있어서 필수 인자다 (물리 어항은 admin 계정 id).
+const userId =
+  process.argv[3] !== undefined
+    ? Number(process.argv[3])
+    : NaN;
 
-if (!targetDate) {
+
+if (!targetDate || Number.isNaN(userId)) {
 
   console.log('');
   console.log('사용법:');
   console.log('');
   console.log(
-    'node calculate_growth.cjs YYYY-MM-DD'
+    'node calculate_growth.cjs YYYY-MM-DD USER_ID'
   );
   console.log('');
   console.log('예시:');
   console.log('');
   console.log(
-    'node calculate_growth.cjs 2026-09-06'
+    'node calculate_growth.cjs 2026-09-06 1'
   );
   console.log('');
 
@@ -188,7 +195,9 @@ db.prepare(`
 
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-    date TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+
+    user_id INTEGER,
 
     daily_length_px REAL,
 
@@ -220,7 +229,9 @@ db.prepare(`
 
     model_version TEXT,
 
-    calculated_at TEXT NOT NULL
+    calculated_at TEXT NOT NULL,
+
+    UNIQUE(date, user_id)
   )
 `).run();
 
@@ -467,7 +478,7 @@ const rawSamples =
 
     FROM growth_samples
 
-    WHERE date = ?
+    WHERE date = ? AND user_id = ?
 
     ORDER BY
 
@@ -478,7 +489,8 @@ const rawSamples =
       id ASC
 
   `).all(
-    targetDate
+    targetDate,
+    userId
   );
 
 
@@ -1176,9 +1188,10 @@ if (
 
   db.prepare(`
     DELETE FROM daily_growth
-    WHERE date = ?
+    WHERE date = ? AND user_id = ?
   `).run(
-    targetDate
+    targetDate,
+    userId
   );
 
 
@@ -1186,6 +1199,8 @@ if (
     INSERT INTO daily_growth (
 
       date,
+
+      user_id,
 
       daily_length_px,
 
@@ -1225,6 +1240,8 @@ if (
 
       @date,
 
+      @user_id,
+
       @daily_length_px,
 
       @daily_length_mm,
@@ -1263,6 +1280,9 @@ if (
 
     date:
       targetDate,
+
+    user_id:
+      userId,
 
     daily_length_px:
       null,
@@ -1397,9 +1417,10 @@ else if (
 db.prepare(`
   DELETE FROM daily_growth
 
-  WHERE date = ?
+  WHERE date = ? AND user_id = ?
 `).run(
-  targetDate
+  targetDate,
+  userId
 );
 
 
@@ -1413,6 +1434,8 @@ const insertDailyGrowth =
     INSERT INTO daily_growth (
 
       date,
+
+      user_id,
 
       daily_length_px,
 
@@ -1451,6 +1474,8 @@ const insertDailyGrowth =
     VALUES (
 
       @date,
+
+      @user_id,
 
       @daily_length_px,
 
@@ -1493,6 +1518,9 @@ insertDailyGrowth.run({
 
   date:
     targetDate,
+
+  user_id:
+    userId,
 
   daily_length_px:
     roundNumber(

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useAppContext } from '../context/AppContext';
 
 type Fish2DProps = {
   center_norm?: number[];
@@ -34,9 +35,19 @@ export function Fish2D({
   // 선택된 물고기 이미지 갱신용
   // ============================================================
 
+  const { currentUser } = useAppContext();
+
   const [spriteVersion, setSpriteVersion] = useState(
     Date.now()
   );
+
+  // 계정별 생성 이미지가 없으면(아직 커스터마이징 안 함)
+  // 기본 공용 이미지로 대체한다.
+  const [useDefaultSprite, setUseDefaultSprite] = useState(false);
+
+  useEffect(() => {
+    setUseDefaultSprite(false);
+  }, [currentUser?.id, spriteVersion]);
 
   // ============================================================
   // 물고기 스타일 변경 이벤트 감지
@@ -311,7 +322,9 @@ export function Fish2D({
   // ============================================================
 
   const imageSrc =
-    `/fish_sprites/${imageName}?v=${spriteVersion}`;
+    currentUser && !useDefaultSprite
+      ? `/fish_sprites/${currentUser.id}/${imageName}?v=${spriteVersion}`
+      : `/fish_sprites/${imageName}?v=${spriteVersion}`;
 
   // ============================================================
   // 렌더링
@@ -341,6 +354,7 @@ export function Fish2D({
       >
         <img
           src={imageSrc}
+          onError={() => setUseDefaultSprite(true)}
           alt="Fish"
           style={{
             width: '120px',

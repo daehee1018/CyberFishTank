@@ -4408,8 +4408,9 @@ const activityChartData =
     <div
       className="
         grid
-        grid-cols-[220px_minmax(0,1fr)]
+        grid-cols-1
         gap-4
+        sm:grid-cols-[220px_minmax(0,1fr)]
       "
     >
 

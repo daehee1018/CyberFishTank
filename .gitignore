@@ -35,6 +35,14 @@ node_modules/
 uploads/
 *.db
 *.db-journal
+
+# 오늘 추가한 개인 카메라 AI 추론 서비스
+fish_ai_env/
+__pycache__/
+*.pyc
+
+# DB 마이그레이션/작업 전 백업 스냅샷
+*.backup-*
 ai_env/
 node_modules/
 uploads/

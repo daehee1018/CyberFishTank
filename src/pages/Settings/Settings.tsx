@@ -199,35 +199,37 @@ const Settings: React.FC = () => {
             )}
 
             <div className="overflow-hidden rounded-[16px] border border-slate-200">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">아이디</th>
-                    <th className="px-4 py-3 font-medium">역할</th>
-                    <th className="px-4 py-3 font-medium">생성일</th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((user) => (
-                    <tr key={user.id} className="border-t border-slate-100">
-                      <td className="px-4 py-3 font-medium text-slate-900">{user.username}</td>
-                      <td className="px-4 py-3 text-slate-600">{user.role === 'admin' ? '관리자' : '일반 유저'}</td>
-                      <td className="px-4 py-3 text-slate-500">{new Date(user.created_at).toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteUser(user.id)}
-                          disabled={user.id === currentUser?.id}
-                          className="rounded-[10px] border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          삭제
-                        </button>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[480px] text-left text-sm">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">아이디</th>
+                      <th className="px-4 py-3 font-medium">역할</th>
+                      <th className="px-4 py-3 font-medium">생성일</th>
+                      <th className="px-4 py-3" />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {users.map((user) => (
+                      <tr key={user.id} className="border-t border-slate-100">
+                        <td className="px-4 py-3 font-medium text-slate-900">{user.username}</td>
+                        <td className="px-4 py-3 text-slate-600">{user.role === 'admin' ? '관리자' : '일반 유저'}</td>
+                        <td className="px-4 py-3 text-slate-500">{new Date(user.created_at).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(user.id)}
+                            disabled={user.id === currentUser?.id}
+                            className="rounded-[10px] border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            삭제
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <form onSubmit={handleCreateUser} className="mt-4 grid gap-4 md:grid-cols-4">

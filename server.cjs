@@ -40,7 +40,8 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json());
+// 기본 100kb로는 웹캠 프레임(base64 JPEG)을 못 받아서 늘려둔다.
+app.use(express.json({ limit: '10mb' }));
 
 // ============================================================
 // 로그인 세션
@@ -385,6 +386,89 @@ app.post('/api/fish', requireAuth, (req, res) => {
 });
 
 // ============================================================
+// 계정별 웹캠 프레임 → AI 추론 서버(fish-ai, 127.0.0.1:5001) 중계
+//
+// 브라우저 → (여기) → fish_ai_server.py(YOLO 탐지/추적/자세) → 결과 저장 + 응답
+// ============================================================
+
+app.post('/api/camera/frame', requireAuth, async (req, res) => {
+  const { image } = req.body || {};
+
+  if (!image) {
+    return res.status(400).json({ success: false, error: '이미지가 없습니다.' });
+  }
+
+  let result;
+
+  try {
+    const inferResponse = await fetch('http://127.0.0.1:5001/infer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: String(req.session.userId),
+        image,
+      }),
+    });
+
+    if (!inferResponse.ok) {
+      return res.status(502).json({ success: false, error: 'AI 서버 응답 오류' });
+    }
+
+    result = await inferResponse.json();
+  } catch (error) {
+    console.error('❌ 카메라 프레임 추론 요청 실패:', error);
+    return res.status(502).json({ success: false, error: 'AI 서버에 연결할 수 없습니다.' });
+  }
+
+  const fish = result?.fish;
+
+  if (result?.success && fish) {
+    try {
+      insertYoloDataForUser.run({
+        timestamp: new Date().toISOString(),
+        center_x: fish.center_norm?.[0] ?? null,
+        center_y: fish.center_norm?.[1] ?? null,
+        move_direction: fish.move_direction ?? null,
+        pose_direction: fish.pose_direction ?? null,
+        head_x: fish.keypoints?.head?.[0] ?? null,
+        head_y: fish.keypoints?.head?.[1] ?? null,
+        tail_x: fish.keypoints?.tail?.[0] ?? null,
+        tail_y: fish.keypoints?.tail?.[1] ?? null,
+        state: fish.state ?? null,
+        abnormal: fish.abnormal ? 1 : 0,
+        user_id: req.session.userId,
+      });
+    } catch (dbError) {
+      console.error('❌ 개인 카메라 YOLO 데이터 저장 오류:', dbError);
+    }
+
+    // 이 계정으로 로그인된 다른 기기(예: 폰)도 같은 데이터를 보게
+    // /posi와 동일한 형태로 WebSocket 브로드캐스트한다.
+    // AppContext가 owner_user_id로 필터링해서 본인 계정에만 적용한다.
+    const broadcastMessage = JSON.stringify({
+      owner_user_id: req.session.userId,
+      center_norm: fish.center_norm ?? [0.5, 0.5],
+      move_direction: fish.move_direction ?? 'none',
+      pose_direction: fish.pose_direction ?? 'none',
+      keypoints: {
+        head: fish.keypoints?.head ?? [0.5, 0.5],
+        tail: fish.keypoints?.tail ?? [0.5, 0.5],
+      },
+      state: fish.state ?? 'tracked',
+      abnormal: Boolean(fish.abnormal),
+    });
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(broadcastMessage);
+      }
+    });
+  }
+
+  res.json(result);
+});
+
+// ============================================================
 // 사용자 관리 라우트 (관리자 전용)
 // ============================================================
 
@@ -495,12 +579,17 @@ function runDailyGrowthCalculation() {
       'calculate_growth.cjs'
     );
 
+  // 물리 어항은 admin 계정 소유로 계산한다.
+  const growthOwner =
+    getUserByUsernameStmt.get(process.env.ADMIN_USERNAME || 'admin');
+
   // calculate_growth.cjs 실행
   execFile(
     'node',
     [
       scriptPath,
-      targetDate
+      targetDate,
+      String(growthOwner ? growthOwner.id : '')
     ],
     (
       error,
@@ -623,12 +712,17 @@ function runDailyActivityCalculation() {
     );
 
 
+  // 물리 어항은 admin 계정 소유로 계산한다.
+  const activityOwner =
+    getUserByUsernameStmt.get(process.env.ADMIN_USERNAME || 'admin');
+
   // calculate_activity.cjs 실행
   execFile(
     'node',
     [
       scriptPath,
-      targetDate
+      targetDate,
+      String(activityOwner ? activityOwner.id : '')
     ],
     (
       error,
@@ -1015,6 +1109,15 @@ yoloDb.prepare(`
 
 console.log('✅ yolo_data 테이블 확인 완료');
 
+// 계정별 웹캠 연동(카메라 선택 기능)을 위해 user_id 컬럼을 추가한다.
+// 기존 물리 어항 데이터는 user_id가 NULL로 남아 공용으로 취급된다.
+try {
+  yoloDb.prepare('ALTER TABLE yolo_data ADD COLUMN user_id INTEGER').run();
+  console.log('✅ yolo_data.user_id 컬럼 추가됨');
+} catch (error) {
+  // 이미 컬럼이 있으면 SQLite가 예외를 던진다. 정상 상황이므로 무시.
+}
+
 // ============================================================
 // 성장 Raw Sample 테이블
 //
@@ -1062,6 +1165,73 @@ yoloDb.prepare(`
 
 console.log('✅ growth_samples 테이블 확인 완료');
 
+// ============================================================
+// 계정별 성장/활동량 데이터 분리 마이그레이션
+//
+// 지금까지 이 프로젝트는 물리 어항 하나만 다뤄서
+// growth_samples / daily_growth / daily_activity가 전부
+// 계정 구분 없이 저장됐다. 이제 계정마다 카메라를 붙일 수
+// 있으므로, 기존 데이터는 전부 admin(물리 어항 소유자) 것으로
+// 이전하고 앞으로는 user_id로 나눈다.
+// ============================================================
+
+const migrationAdminUser =
+  getUserByUsernameStmt.get(process.env.ADMIN_USERNAME || 'admin');
+const migrationAdminId =
+  migrationAdminUser ? migrationAdminUser.id : null;
+
+// yolo_data: 컬럼은 이미 위에서 추가했다. 기존(물리 어항) 행만
+// 소유자가 비어있으므로 admin으로 채운다.
+try {
+  yoloDb.prepare('UPDATE yolo_data SET user_id = ? WHERE user_id IS NULL').run(migrationAdminId);
+} catch (error) {
+  console.error('❌ yolo_data user_id 백필 오류:', error);
+}
+
+// growth_samples: user_id 컬럼 추가 + 기존 데이터 admin으로 백필
+try {
+  yoloDb.prepare('ALTER TABLE growth_samples ADD COLUMN user_id INTEGER').run();
+  console.log('✅ growth_samples.user_id 컬럼 추가됨');
+} catch (error) {
+  // 이미 컬럼이 있으면 예외. 정상 상황.
+}
+try {
+  yoloDb.prepare('UPDATE growth_samples SET user_id = ? WHERE user_id IS NULL').run(migrationAdminId);
+} catch (error) {
+  console.error('❌ growth_samples user_id 백필 오류:', error);
+}
+
+// date UNIQUE 였던 daily_growth / daily_activity를
+// (date, user_id) UNIQUE로 재구성한다. SQLite는 제약조건을
+// 직접 못 바꿔서 테이블을 새로 만들고 데이터를 옮긴다.
+function migrateDailySummaryTableToPerUser(tableName, createSql) {
+  const columns = yoloDb.prepare(`PRAGMA table_info(${tableName})`).all();
+
+  if (columns.length === 0) {
+    // 테이블이 아직 없으면(최초 실행) 새 스키마로 바로 생성
+    yoloDb.prepare(createSql).run();
+    return;
+  }
+
+  if (columns.some((c) => c.name === 'user_id')) {
+    // 이미 마이그레이션됨
+    return;
+  }
+
+  console.log(`🔧 ${tableName} 테이블을 계정별 구조로 마이그레이션 중...`);
+
+  const oldColumnNames = columns.map((c) => c.name).join(', ');
+
+  yoloDb.prepare(`ALTER TABLE ${tableName} RENAME TO ${tableName}_old_singleuser`).run();
+  yoloDb.prepare(createSql).run();
+  yoloDb.prepare(`
+    INSERT INTO ${tableName} (${oldColumnNames}, user_id)
+    SELECT ${oldColumnNames}, ? FROM ${tableName}_old_singleuser
+  `).run(migrationAdminId);
+  yoloDb.prepare(`DROP TABLE ${tableName}_old_singleuser`).run();
+
+  console.log(`✅ ${tableName} 마이그레이션 완료 (기존 데이터는 admin 계정 소유로 이전됨)`);
+}
 
 // ============================================================
 // 일일 성장 Summary 테이블
@@ -1069,12 +1239,14 @@ console.log('✅ growth_samples 테이블 확인 완료');
 // 하루 최종 대표 성장값 저장
 // ============================================================
 
-yoloDb.prepare(`
+const DAILY_GROWTH_CREATE_SQL = `
   CREATE TABLE IF NOT EXISTS daily_growth (
 
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-    date TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+
+    user_id INTEGER,
 
     daily_length_px REAL,
 
@@ -1106,12 +1278,62 @@ yoloDb.prepare(`
 
     model_version TEXT,
 
-    calculated_at TEXT NOT NULL
+    calculated_at TEXT NOT NULL,
+
+    UNIQUE(date, user_id)
 
   )
-`).run();
+`;
+
+migrateDailySummaryTableToPerUser('daily_growth', DAILY_GROWTH_CREATE_SQL);
 
 console.log('✅ daily_growth 테이블 확인 완료');
+
+// daily_activity는 calculate_activity.cjs가 만들지만, 이미 존재하는
+// (물리 어항 시절) 테이블이면 여기서도 계정별 구조로 옮겨준다.
+const DAILY_ACTIVITY_CREATE_SQL = `
+  CREATE TABLE IF NOT EXISTS daily_activity (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    date TEXT NOT NULL,
+
+    user_id INTEGER,
+
+    total_distance REAL,
+
+    total_distance_px REAL,
+
+    total_distance_cm REAL,
+
+    average_speed REAL,
+
+    max_speed REAL,
+
+    raw_sample_count INTEGER DEFAULT 0,
+
+    used_sample_count INTEGER DEFAULT 0,
+
+    rejected_noise_count INTEGER DEFAULT 0,
+
+    rejected_gap_count INTEGER DEFAULT 0,
+
+    rejected_speed_count INTEGER DEFAULT 0,
+
+    quality_flag TEXT,
+
+    model_version TEXT,
+
+    calculated_at TEXT NOT NULL,
+
+    UNIQUE(date, user_id)
+
+  )
+`;
+
+migrateDailySummaryTableToPerUser('daily_activity', DAILY_ACTIVITY_CREATE_SQL);
+
+console.log('✅ daily_activity 테이블 확인 완료');
 
 
 // ============================================================
@@ -1407,6 +1629,7 @@ app.post(
 
 app.post(
   '/api/select-style',
+  requireAuth,
   (req, res) => {
 
     const {
@@ -1421,19 +1644,24 @@ app.post(
 
     }
 
+    // 경로 조작(path traversal) 방지: 파일명만 사용
+    const safeStyleName = path.basename(selectedStyle);
+
     const inputPath =
       path.join(
         __dirname,
         'public',
         'fish_10_candidates',
-        selectedStyle
+        safeStyleName
       );
 
+    // 계정별로 생성 결과를 분리 저장
     const outDir =
       path.join(
         __dirname,
         'public',
-        'fish_sprites'
+        'fish_sprites',
+        String(req.session.userId)
       );
 
     if (!fs.existsSync(inputPath)) {
@@ -1613,60 +1841,20 @@ const insertSensorData =
 
 // ============================================================
 // YOLO 데이터 INSERT SQL
+//
+// 물리 어항(/posi, admin 소유)과 개인 카메라(/api/camera/frame) 모두
+// 이 문 하나로 저장하고, user_id로 소유 계정을 구분한다.
 // ============================================================
 
-const insertYoloData =
+const insertYoloDataForUser =
   yoloDb.prepare(`
     INSERT INTO yolo_data (
-
-      timestamp,
-
-      center_x,
-
-      center_y,
-
-      move_direction,
-
-      pose_direction,
-
-      head_x,
-
-      head_y,
-
-      tail_x,
-
-      tail_y,
-
-      state,
-
-      abnormal
-
+      timestamp, center_x, center_y, move_direction, pose_direction,
+      head_x, head_y, tail_x, tail_y, state, abnormal, user_id
     )
-
     VALUES (
-
-      @timestamp,
-
-      @center_x,
-
-      @center_y,
-
-      @move_direction,
-
-      @pose_direction,
-
-      @head_x,
-
-      @head_y,
-
-      @tail_x,
-
-      @tail_y,
-
-      @state,
-
-      @abnormal
-
+      @timestamp, @center_x, @center_y, @move_direction, @pose_direction,
+      @head_x, @head_y, @tail_x, @tail_y, @state, @abnormal, @user_id
     )
   `);
 
@@ -1704,7 +1892,9 @@ const insertYoloData =
 
         side_tilt_deg,
 
-        raw_json
+        raw_json,
+
+        user_id
 
       )
 
@@ -1736,7 +1926,9 @@ const insertYoloData =
 
         @side_tilt_deg,
 
-        @raw_json
+        @raw_json,
+
+        @user_id
 
       )
     `);
@@ -2062,7 +2254,8 @@ const insertYoloData =
   // ============================================================
 
   function saveGrowthSample(
-    growthSample
+    growthSample,
+    userId
   ) {
 
     try {
@@ -2167,7 +2360,10 @@ const insertYoloData =
           raw_json:
             JSON.stringify(
               growthSample
-            )
+            ),
+
+          user_id:
+            userId ?? null
 
         });
 
@@ -2212,11 +2408,12 @@ const insertYoloData =
 // ============================================================
 
 function calculateDailyGrowth(
-  targetDate
+  targetDate,
+  userId
 ) {
 
   // ----------------------------------------------------------
-  // 해당 날짜 Raw Sample 조회
+  // 해당 날짜 Raw Sample 조회 (계정별)
   // ----------------------------------------------------------
 
   const rawSamples =
@@ -2227,10 +2424,12 @@ function calculateDailyGrowth(
         growth_samples
       WHERE
         date = ?
+        AND user_id = ?
       ORDER BY
         sample_datetime ASC
     `).all(
-      targetDate
+      targetDate,
+      userId
     );
 
 
@@ -2702,6 +2901,9 @@ function calculateDailyGrowth(
       date:
         targetDate,
 
+      user_id:
+        userId,
+
       daily_length_px:
         null,
 
@@ -2845,6 +3047,9 @@ function calculateDailyGrowth(
     date:
       targetDate,
 
+    user_id:
+      userId,
+
     daily_length_px:
       dailyLengthPx,
 
@@ -2924,6 +3129,8 @@ function saveDailyGrowthSummary(
 
         date,
 
+        user_id,
+
         daily_length_px,
 
         daily_length_mm,
@@ -2962,6 +3169,8 @@ function saveDailyGrowthSummary(
 
         @date,
 
+        @user_id,
+
         @daily_length_px,
 
         @daily_length_mm,
@@ -2996,7 +3205,7 @@ function saveDailyGrowthSummary(
 
       )
 
-      ON CONFLICT(date)
+      ON CONFLICT(date, user_id)
 
       DO UPDATE SET
 
@@ -4325,7 +4534,20 @@ app.post(
     // 기존 기능 유지
     // ========================================================
 
+    // 이 물리 어항(카메라)은 admin 계정 소유로 취급한다.
+    // 다른 계정은 이 값을 받지 않고, 본인 카메라를 켰을 때만
+    // 자기 데이터를 받는다 (프론트 AppContext에서 owner_user_id로 필터링).
+    const physicalTankOwner =
+      getUserByUsernameStmt.get(
+        process.env.ADMIN_USERNAME || 'admin'
+      );
+
     const payload = {
+
+      owner_user_id:
+        physicalTankOwner
+          ? physicalTankOwner.id
+          : null,
 
       center_norm:
         Array.isArray(
@@ -4390,7 +4612,7 @@ app.post(
 
     try {
 
-      insertYoloData.run({
+      insertYoloDataForUser.run({
 
         timestamp:
           new Date()
@@ -4448,7 +4670,10 @@ app.post(
         abnormal:
           payload.abnormal
             ? 1
-            : 0
+            : 0,
+
+        user_id:
+          payload.owner_user_id
 
       });
 
@@ -4483,7 +4708,10 @@ app.post(
       ) {
 
         saveGrowthSample(
-          growthSample
+          growthSample,
+          physicalTankOwner
+            ? physicalTankOwner.id
+            : null
         );
 
       }
@@ -4642,6 +4870,7 @@ app.get(
 
 app.get(
   '/api/growth/analyze',
+  requireAuth,
   (req, res) => {
 
     try {
@@ -4658,7 +4887,8 @@ app.get(
 
       const result =
         calculateDailyGrowth(
-          date
+          date,
+          req.session.userId
         );
 
 
@@ -4699,6 +4929,7 @@ app.get(
 
 app.get(
   '/api/growth/daily',
+  requireAuth,
   (req, res) => {
 
     try {
@@ -4709,9 +4940,11 @@ app.get(
             *
           FROM
             daily_growth
+          WHERE
+            user_id = ?
           ORDER BY
             date ASC
-        `).all();
+        `).all(req.session.userId);
 
 
       res.json({
@@ -4760,6 +4993,7 @@ app.get(
 
 app.get(
   '/api/activity/daily',
+  requireAuth,
   (req, res) => {
 
     try {
@@ -4770,9 +5004,11 @@ app.get(
             *
           FROM
             daily_activity
+          WHERE
+            user_id = ?
           ORDER BY
             date ASC
-        `).all();
+        `).all(req.session.userId);
 
 
       res.json({

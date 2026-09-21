@@ -76,7 +76,9 @@ db.exec(`
 
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-    date TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+
+    user_id INTEGER,
 
     total_distance REAL,
 
@@ -98,7 +100,9 @@ db.exec(`
 
     model_version TEXT,
 
-    calculated_at TEXT NOT NULL
+    calculated_at TEXT NOT NULL,
+
+    UNIQUE(date, user_id)
 
   )
 `);
@@ -124,12 +128,18 @@ for (const column of ['total_distance_px', 'total_distance_cm']) {
 const targetDate =
   process.argv[2];
 
+// 계정별로 yolo_data/daily_activity가 분리되어 있어서 필수 인자다.
+const userId =
+  process.argv[3] !== undefined
+    ? Number(process.argv[3])
+    : NaN;
 
-// 날짜가 없으면 종료
-if (!targetDate) {
+
+// 날짜/계정 인자가 없으면 종료
+if (!targetDate || Number.isNaN(userId)) {
 
   console.error(
-    '\n❌ 날짜를 입력해주세요.\n'
+    '\n❌ 날짜와 계정 id를 입력해주세요.\n'
   );
 
   console.log(
@@ -137,7 +147,7 @@ if (!targetDate) {
   );
 
   console.log(
-    'node calculate_activity.cjs 2026-09-06\n'
+    'node calculate_activity.cjs 2026-09-06 1\n'
   );
 
   process.exit(1);
@@ -192,6 +202,8 @@ const rows = db.prepare(`
 
     date(timestamp) = ?
 
+    AND user_id = ?
+
     AND state = 'tracked'
 
     AND abnormal = 0
@@ -202,7 +214,8 @@ const rows = db.prepare(`
 
   ORDER BY timestamp ASC
 `).all(
-  targetDate
+  targetDate,
+  userId
 );
 
 
@@ -738,10 +751,11 @@ const existing =
 
     FROM daily_activity
 
-    WHERE date = ?
+    WHERE date = ? AND user_id = ?
   `)
   .get(
-    targetDate
+    targetDate,
+    userId
   );
 
 
@@ -782,7 +796,7 @@ if (
 
       calculated_at = ?
 
-    WHERE date = ?
+    WHERE date = ? AND user_id = ?
   `)
   .run(
 
@@ -812,7 +826,9 @@ if (
 
     calculatedAt,
 
-    targetDate
+    targetDate,
+
+    userId
   );
 
 
@@ -826,6 +842,8 @@ if (
     INSERT INTO daily_activity (
 
       date,
+
+      user_id,
 
       total_distance,
 
@@ -883,6 +901,8 @@ if (
 
       ?,
 
+      ?,
+
       ?
 
     )
@@ -890,6 +910,8 @@ if (
   .run(
 
     targetDate,
+
+    userId,
 
     totalDistanceCm,
 

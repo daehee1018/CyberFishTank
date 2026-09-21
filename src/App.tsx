@@ -11,7 +11,7 @@ import FishSelect from './pages/FishSelect/FishSelect';
 import { useAppContext } from './context/AppContext';
 
 function RequireAuth() {
-  const { currentUser, authLoading } = useAppContext();
+  const { currentUser, authLoading, fishSpecies, fishLoading } = useAppContext();
   const location = useLocation();
 
   if (authLoading) {
@@ -24,6 +24,19 @@ function RequireAuth() {
 
   if (!currentUser) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  if (fishLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-500">
+        불러오는 중...
+      </div>
+    );
+  }
+
+  // 물고기가 아직 설정되지 않은 계정은 선택 화면으로 강제 이동
+  if (!fishSpecies && location.pathname !== '/select-fish') {
+    return <Navigate to="/select-fish" replace />;
   }
 
   return <Outlet />;
