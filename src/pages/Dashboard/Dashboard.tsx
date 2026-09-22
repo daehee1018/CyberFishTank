@@ -33,6 +33,8 @@ const Dashboard: React.FC = () => {
     adminLiveFrame,
     controlNotice,
     currentUser,
+    tankTheme,
+    substrateColor,
   } = useAppContext();
 
   // 물리 어항 영상은 admin 소유다. 다른 계정은 본인 카메라를
@@ -658,6 +660,8 @@ const Dashboard: React.FC = () => {
                   showFish={false}
                   decorations={aquariumDecorations}
                   waterColor={waterColor}
+                  theme={tankTheme}
+                  substrateColor={substrateColor}
                 >
 
                   <Fish2D

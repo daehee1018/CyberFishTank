@@ -223,8 +223,43 @@ authDb.prepare(`
 
 console.log('✅ user_fish 테이블 확인 완료');
 
+// 색상 틴트(hue-rotate 각도) / 액세서리(이모지) 같은 가벼운
+// 코스메틱 커스터마이징. AI 사진 변환(스타일 후보 선택)과는
+// 별개로, 어떤 스프라이트를 쓰든 항상 위에 겹쳐 적용된다.
+try {
+  authDb.prepare('ALTER TABLE user_fish ADD COLUMN color_hue INTEGER NOT NULL DEFAULT 0').run();
+  console.log('✅ user_fish.color_hue 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+
+try {
+  authDb.prepare("ALTER TABLE user_fish ADD COLUMN accessory TEXT NOT NULL DEFAULT ''").run();
+  console.log('✅ user_fish.accessory 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+
+// 어항 배경 테마(기본/밤/할로윈/크리스마스). 물고기가 아니라
+// 어항 전체에 적용되지만, 계정별 설정이라 같은 테이블에 둔다.
+try {
+  authDb.prepare("ALTER TABLE user_fish ADD COLUMN tank_theme TEXT NOT NULL DEFAULT 'default'").run();
+  console.log('✅ user_fish.tank_theme 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+
+// 바닥재(자갈/모래) 색상. 실제 어항에서도 흔한 커스터마이징이라
+// 새 이미지 없이 색상 프리셋만으로 구현한다.
+try {
+  authDb.prepare("ALTER TABLE user_fish ADD COLUMN substrate_color TEXT NOT NULL DEFAULT 'natural'").run();
+  console.log('✅ user_fish.substrate_color 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+
 const getUserFishStmt = authDb.prepare(`
-  SELECT species, fish_name FROM user_fish WHERE user_id = ?
+  SELECT species, fish_name, color_hue, accessory, tank_theme, substrate_color FROM user_fish WHERE user_id = ?
 `);
 
 const upsertUserFishStmt = authDb.prepare(`
@@ -235,6 +270,22 @@ const upsertUserFishStmt = authDb.prepare(`
     fish_name = excluded.fish_name,
     updated_at = excluded.updated_at
 `);
+
+const updateUserFishAppearanceStmt = authDb.prepare(`
+  UPDATE user_fish SET color_hue = @color_hue, accessory = @accessory WHERE user_id = @user_id
+`);
+
+const updateTankThemeStmt = authDb.prepare(`
+  UPDATE user_fish SET tank_theme = @tank_theme WHERE user_id = @user_id
+`);
+
+const updateSubstrateColorStmt = authDb.prepare(`
+  UPDATE user_fish SET substrate_color = @substrate_color WHERE user_id = @user_id
+`);
+
+const ACCESSORY_OPTIONS = ['', 'hat', 'crown', 'ribbon', 'sunglasses', 'flower'];
+const TANK_THEME_OPTIONS = ['default', 'night', 'halloween', 'christmas'];
+const SUBSTRATE_COLOR_OPTIONS = ['natural', 'white', 'black', 'pink', 'blue'];
 
 // ============================================================
 // 최초 실행 시 관리자 계정 자동 생성
@@ -448,7 +499,16 @@ app.get('/api/fish', requireAuth, (req, res) => {
 
   res.json({
     success: true,
-    fish: row ? { species: row.species, fishName: row.fish_name } : null,
+    fish: row
+      ? {
+          species: row.species,
+          fishName: row.fish_name,
+          colorHue: row.color_hue,
+          accessory: row.accessory,
+          tankTheme: row.tank_theme,
+          substrateColor: row.substrate_color,
+        }
+      : null,
   });
 });
 
@@ -467,6 +527,100 @@ app.post('/api/fish', requireAuth, (req, res) => {
   });
 
   res.json({ success: true, fish: { species, fishName } });
+});
+
+// ============================================================
+// 물고기 색상 틴트 / 액세서리 (가벼운 코스메틱 커스터마이징)
+//
+// AI 사진 변환(스타일 후보 선택)과 별개로, 어떤 스프라이트를
+// 쓰든 프론트에서 CSS로 겹쳐 적용한다. 물고기(species)를 먼저
+// 선택해야 user_fish 행이 존재하므로, 그 전에는 저장할 수 없다.
+// ============================================================
+
+app.post('/api/fish/appearance', requireAuth, (req, res) => {
+  const { colorHue, accessory } = req.body || {};
+
+  const normalizedHue = Number(colorHue);
+
+  if (!Number.isFinite(normalizedHue) || normalizedHue < 0 || normalizedHue > 360) {
+    return res.status(400).json({ success: false, error: '색상 값이 올바르지 않습니다.' });
+  }
+
+  const normalizedAccessory = typeof accessory === 'string' ? accessory : '';
+
+  if (!ACCESSORY_OPTIONS.includes(normalizedAccessory)) {
+    return res.status(400).json({ success: false, error: '지원하지 않는 액세서리입니다.' });
+  }
+
+  const existing = getUserFishStmt.get(req.session.userId);
+
+  if (!existing) {
+    return res.status(400).json({ success: false, error: '먼저 물고기를 선택해주세요.' });
+  }
+
+  updateUserFishAppearanceStmt.run({
+    user_id: req.session.userId,
+    color_hue: Math.round(normalizedHue),
+    accessory: normalizedAccessory,
+  });
+
+  res.json({
+    success: true,
+    fish: { colorHue: Math.round(normalizedHue), accessory: normalizedAccessory },
+  });
+});
+
+// ============================================================
+// 어항 배경 테마 (기본/밤/할로윈/크리스마스)
+//
+// 물고기가 아니라 어항 전체에 적용되는 설정이라 별도 엔드포인트로
+// 분리한다. 마찬가지로 물고기를 먼저 선택해야 저장할 수 있다.
+// ============================================================
+
+app.post('/api/tank-theme', requireAuth, (req, res) => {
+  const { theme } = req.body || {};
+
+  if (!TANK_THEME_OPTIONS.includes(theme)) {
+    return res.status(400).json({ success: false, error: '지원하지 않는 테마입니다.' });
+  }
+
+  const existing = getUserFishStmt.get(req.session.userId);
+
+  if (!existing) {
+    return res.status(400).json({ success: false, error: '먼저 물고기를 선택해주세요.' });
+  }
+
+  updateTankThemeStmt.run({
+    user_id: req.session.userId,
+    tank_theme: theme,
+  });
+
+  res.json({ success: true, tankTheme: theme });
+});
+
+// ============================================================
+// 바닥재(자갈/모래) 색상
+// ============================================================
+
+app.post('/api/tank-substrate', requireAuth, (req, res) => {
+  const { substrateColor } = req.body || {};
+
+  if (!SUBSTRATE_COLOR_OPTIONS.includes(substrateColor)) {
+    return res.status(400).json({ success: false, error: '지원하지 않는 바닥재 색상입니다.' });
+  }
+
+  const existing = getUserFishStmt.get(req.session.userId);
+
+  if (!existing) {
+    return res.status(400).json({ success: false, error: '먼저 물고기를 선택해주세요.' });
+  }
+
+  updateSubstrateColorStmt.run({
+    user_id: req.session.userId,
+    substrate_color: substrateColor,
+  });
+
+  res.json({ success: true, substrateColor });
 });
 
 // ============================================================

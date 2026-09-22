@@ -23,3 +23,132 @@
 	transform-origin: 50% 100%;
 	animation: aquarium-plant-sway 3.8s ease-in-out infinite;
 }
+
+/* ================================
+   어항 물 디테일: 카오틱 광선, 수면 반짝임, 기포
+   ================================ */
+
+@keyframes aquarium-caustic-drift {
+	0%,
+	100% {
+		background-position: 0% 0%, 30% 10%, 60% -10%, 15% 40%;
+	}
+	50% {
+		background-position: 15% 20%, 10% 30%, 40% 15%, 35% 20%;
+	}
+}
+
+.aquarium-caustics {
+	animation: aquarium-caustic-drift 30s ease-in-out infinite;
+}
+
+@keyframes aquarium-surface-shimmer {
+	0%,
+	100% {
+		background-position: 0% 0%;
+	}
+	50% {
+		background-position: 100% 0%;
+	}
+}
+
+.aquarium-surface {
+	animation: aquarium-surface-shimmer 6s ease-in-out infinite;
+}
+
+@keyframes aquarium-bubble-rise {
+	0% {
+		transform: translate(0, 0) scale(0.7);
+		opacity: 0;
+	}
+	12% {
+		opacity: 0.6;
+	}
+	85% {
+		opacity: 0.35;
+	}
+	100% {
+		transform: translate(var(--bubble-drift, 8px), -100%) scale(1);
+		opacity: 0;
+	}
+}
+
+.aquarium-bubble {
+	position: absolute;
+	bottom: 14%;
+	border-radius: 9999px;
+	background: radial-gradient(
+		circle at 35% 30%,
+		rgba(255, 255, 255, 0.9),
+		rgba(255, 255, 255, 0.15) 60%,
+		rgba(255, 255, 255, 0) 75%
+	);
+	animation-name: aquarium-bubble-rise;
+	animation-timing-function: ease-in;
+	animation-iteration-count: infinite;
+	pointer-events: none;
+}
+
+/* ================================
+   어항 테마: 밤 / 할로윈 / 크리스마스
+   ================================ */
+
+@keyframes aquarium-twinkle {
+	0%,
+	100% {
+		opacity: 0.25;
+		transform: scale(0.85);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1.1);
+	}
+}
+
+.aquarium-star {
+	animation-name: aquarium-twinkle;
+	animation-timing-function: ease-in-out;
+	animation-iteration-count: infinite;
+}
+
+@keyframes aquarium-bat-drift {
+	0%,
+	100% {
+		transform: translate(0, 0);
+	}
+	50% {
+		transform: translate(var(--bat-drift, 30px), -14px);
+	}
+}
+
+.aquarium-bat {
+	animation-name: aquarium-bat-drift;
+	animation-timing-function: ease-in-out;
+	animation-iteration-count: infinite;
+}
+
+@keyframes aquarium-snow-fall {
+	0% {
+		transform: translate(0, -20px) rotate(0deg);
+		opacity: 0;
+	}
+	10% {
+		opacity: 0.9;
+	}
+	90% {
+		opacity: 0.6;
+	}
+	100% {
+		transform: translate(var(--snow-drift, 10px), 460px) rotate(90deg);
+		opacity: 0;
+	}
+}
+
+.aquarium-snow {
+	position: absolute;
+	top: -20px;
+	animation-name: aquarium-snow-fall;
+	animation-timing-function: linear;
+	animation-iteration-count: infinite;
+	pointer-events: none;
+}

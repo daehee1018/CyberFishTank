@@ -205,6 +205,29 @@ interface AppContextType {
     name: string
   ) => Promise<{ success: boolean; error?: string }>;
 
+  // 색상 틴트(0~360도, hue-rotate 각도) / 액세서리(빈 문자열 = 없음)
+  fishColorHue: number;
+  fishAccessory: string;
+
+  updateFishAppearance: (
+    colorHue: number,
+    accessory: string
+  ) => Promise<{ success: boolean; error?: string }>;
+
+  // 어항 배경 테마: 'default' | 'night' | 'halloween' | 'christmas'
+  tankTheme: string;
+
+  updateTankTheme: (
+    theme: string
+  ) => Promise<{ success: boolean; error?: string }>;
+
+  // 바닥재(자갈/모래) 색상: 'natural' | 'white' | 'black' | 'pink' | 'blue'
+  substrateColor: string;
+
+  updateSubstrateColor: (
+    substrateColor: string
+  ) => Promise<{ success: boolean; error?: string }>;
+
   confirmCameraSetup: () => Promise<{ success: boolean; error?: string }>;
 
   notificationsEnabled: boolean;
@@ -442,6 +465,10 @@ export const AppProvider: React.FC<{
       setCurrentUser(null);
       setFishSpecies(null);
       setFishName('');
+      setFishColorHue(0);
+      setFishAccessory('');
+      setTankTheme('default');
+      setSubstrateColor('natural');
     }
   };
 
@@ -467,6 +494,10 @@ export const AppProvider: React.FC<{
       setFishLoading(false);
       setFishSpecies(null);
       setFishName('');
+      setFishColorHue(0);
+      setFishAccessory('');
+      setTankTheme('default');
+      setSubstrateColor('natural');
       return;
     }
 
@@ -494,9 +525,17 @@ export const AppProvider: React.FC<{
           if (data.fish) {
             setFishSpecies(data.fish.species);
             setFishName(data.fish.fishName);
+            setFishColorHue(data.fish.colorHue ?? 0);
+            setFishAccessory(data.fish.accessory ?? '');
+            setTankTheme(data.fish.tankTheme || 'default');
+            setSubstrateColor(data.fish.substrateColor || 'natural');
           } else {
             setFishSpecies(null);
             setFishName('');
+            setFishColorHue(0);
+            setFishAccessory('');
+            setTankTheme('default');
+            setSubstrateColor('natural');
           }
 
           setFishLoading(false);
@@ -538,6 +577,76 @@ export const AppProvider: React.FC<{
       return { success: true };
     } catch (error) {
       console.error('❌ 물고기 정보 저장 실패:', error);
+      return { success: false, error: '서버에 연결할 수 없습니다.' };
+    }
+  };
+
+  const updateFishAppearance = async (colorHue: number, accessory: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/fish/appearance`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ colorHue, accessory }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || '외형 저장에 실패했습니다.' };
+      }
+
+      setFishColorHue(colorHue);
+      setFishAccessory(accessory);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ 물고기 외형 저장 실패:', error);
+      return { success: false, error: '서버에 연결할 수 없습니다.' };
+    }
+  };
+
+  const updateTankTheme = async (theme: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/tank-theme`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || '테마 저장에 실패했습니다.' };
+      }
+
+      setTankTheme(theme);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ 어항 테마 저장 실패:', error);
+      return { success: false, error: '서버에 연결할 수 없습니다.' };
+    }
+  };
+
+  const updateSubstrateColor = async (substrateColor: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/tank-substrate`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ substrateColor }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || '바닥재 저장에 실패했습니다.' };
+      }
+
+      setSubstrateColor(substrateColor);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ 바닥재 색상 저장 실패:', error);
       return { success: false, error: '서버에 연결할 수 없습니다.' };
     }
   };
@@ -586,6 +695,18 @@ export const AppProvider: React.FC<{
 
   const [fishLoading, setFishLoading] =
     useState(true);
+
+  const [fishColorHue, setFishColorHue] =
+    useState(0);
+
+  const [fishAccessory, setFishAccessory] =
+    useState('');
+
+  const [tankTheme, setTankTheme] =
+    useState('default');
+
+  const [substrateColor, setSubstrateColor] =
+    useState('natural');
 
   const [notificationsEnabled, setNotificationsEnabled] =
     useState(true);
@@ -1991,6 +2112,13 @@ export const AppProvider: React.FC<{
     fishSpecies,
     fishLoading,
     updateFish,
+    fishColorHue,
+    fishAccessory,
+    updateFishAppearance,
+    tankTheme,
+    updateTankTheme,
+    substrateColor,
+    updateSubstrateColor,
     confirmCameraSetup,
 
     notificationsEnabled,

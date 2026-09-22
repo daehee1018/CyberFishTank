@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import FishSettings from '../../components/FishSettings';
+import FishAppearance from '../../components/FishAppearance';
+import TankTheme from '../../components/TankTheme';
 import type { AquariumDecorationType } from '../../context/AppContext';
 import Aquarium from '../../components/Aquarium';
 
@@ -13,6 +15,8 @@ const PersonalSettings: React.FC = () => {
     aquariumDecorations,
     setAquariumDecorations,
     setControlNotice,
+    tankTheme,
+    substrateColor,
   } = useAppContext();
 
   const [selectedDecorationId, setSelectedDecorationId] =
@@ -397,12 +401,17 @@ const PersonalSettings: React.FC = () => {
           </div>
           <FishSettings />
         </section>
+        <section>
+          <FishAppearance />
+        </section>
         <section className="rounded-[20px] border border-slate-200 bg-white p-5">
           <div className="mb-4">
             <div className="text-sm text-slate-500">어항 개인 설정</div>
             <div className="text-2xl font-semibold tracking-tight text-slate-900">어항 커스터마이징</div>
             <div className="mt-2 text-sm leading-6 text-slate-600">어항 안의 요소를 직접 드래그하고 크기를 조절합니다.</div>
           </div>
+
+          <TankTheme />
 
           <div className="space-y-4">
             <div
@@ -414,7 +423,7 @@ const PersonalSettings: React.FC = () => {
               onPointerLeave={stopDragging}
               className="relative h-[420px] touch-none overflow-hidden rounded-[16px] border border-slate-200 bg-sky-100"
             >
-              <Aquarium showFish={false} />
+              <Aquarium showFish={false} theme={tankTheme} substrateColor={substrateColor} />
               <div className="absolute inset-0 z-10">
                 {aquariumDecorations.map(decoration => {
                   const isSelected =
