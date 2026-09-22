@@ -485,6 +485,8 @@ export const AppProvider: React.FC<{
       setTankTheme('default');
       setSubstrateColor('natural');
       setActiveGraphicDir('');
+      skipNextDecorationsSaveRef.current = true;
+      setAquariumDecorations([]);
     }
   };
 
@@ -515,6 +517,8 @@ export const AppProvider: React.FC<{
       setTankTheme('default');
       setSubstrateColor('natural');
       setActiveGraphicDir('');
+      skipNextDecorationsSaveRef.current = true;
+      setAquariumDecorations([]);
       return;
     }
 
@@ -547,6 +551,8 @@ export const AppProvider: React.FC<{
             setTankTheme(data.fish.tankTheme || 'default');
             setSubstrateColor(data.fish.substrateColor || 'natural');
             setActiveGraphicDir(data.fish.activeGraphicDir || '');
+            skipNextDecorationsSaveRef.current = true;
+            setAquariumDecorations(parseDecorations(data.fish.decorations));
           } else {
             setFishSpecies(null);
             setFishName('');
@@ -555,6 +561,8 @@ export const AppProvider: React.FC<{
             setTankTheme('default');
             setSubstrateColor('natural');
             setActiveGraphicDir('');
+            skipNextDecorationsSaveRef.current = true;
+            setAquariumDecorations([]);
           }
 
           setFishLoading(false);
@@ -694,6 +702,8 @@ export const AppProvider: React.FC<{
         setTankTheme(data.fish.tankTheme || 'default');
         setSubstrateColor(data.fish.substrateColor || 'natural');
         setActiveGraphicDir(data.fish.activeGraphicDir || '');
+        skipNextDecorationsSaveRef.current = true;
+        setAquariumDecorations(parseDecorations(data.fish.decorations));
       }
     } catch (error) {
       console.error('❌ 물고기 정보 새로고침 실패:', error);
@@ -795,43 +805,27 @@ export const AppProvider: React.FC<{
 
   // ====================================================
   // 어항 커스터마이징
+  //
+  // 예전엔 브라우저 localStorage에만 저장돼서 기기/브라우저를
+  // 바꾸면 안 보였다. 이제 다른 코스메틱 설정처럼 /api/fish
+  // 응답에 실려오고, 서버에 저장된다. 드래그/크기조절 중에는
+  // 매 프레임 저장하면 안 되니 디바운스해서 보낸다.
   // ====================================================
 
-  // 계정별로 분리 저장하기 위해 유저 id를 key에 포함시킨다.
-  const getDecorationsKey = (userId: number | null | undefined) =>
-    userId
-      ? `cyber-fishtank-aquarium-decorations-${userId}`
-      : null;
-
-  const parseDecorations = (saved: string | null): AquariumDecoration[] => {
-    try {
-      if (!saved) {
-        return [];
-      }
-
-      const parsed =
-        JSON.parse(saved);
-
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-
-      return parsed.filter(
-        item =>
-          item &&
-          typeof item.id === 'string' &&
-          typeof item.type === 'string' &&
-          typeof item.src === 'string' &&
-          Number.isFinite(item.x) &&
-          Number.isFinite(item.y)
-      );
-    } catch (error) {
-      console.warn(
-        '어항 배치 복원 실패:',
-        error
-      );
+  const parseDecorations = (value: unknown): AquariumDecoration[] => {
+    if (!Array.isArray(value)) {
       return [];
     }
+
+    return value.filter(
+      (item): item is AquariumDecoration =>
+        item &&
+        typeof item.id === 'string' &&
+        typeof item.type === 'string' &&
+        typeof item.src === 'string' &&
+        Number.isFinite(item.x) &&
+        Number.isFinite(item.y)
+    );
   };
 
   const [
@@ -839,39 +833,36 @@ export const AppProvider: React.FC<{
     setAquariumDecorations
   ] = useState<AquariumDecoration[]>([]);
 
-  // currentUser가 바뀔 때(로그인/로그아웃/계정 전환)마다
-  // 해당 계정의 배치를 새로 불러온다.
-  useEffect(() => {
-    const key = getDecorationsKey(currentUser?.id);
+  // 서버에서 막 불러온 직후의 변경은 저장할 필요가 없다(그대로
+  // 다시 보내는 것뿐이라 낭비). loadFish/refreshFish가 값을
+  // 채울 때 이 ref를 true로 표시해두고, 저장 effect가 한 번은
+  // 건너뛰게 한다.
+  const skipNextDecorationsSaveRef = useRef(false);
 
-    if (!key) {
-      setAquariumDecorations([]);
+  useEffect(() => {
+    if (skipNextDecorationsSaveRef.current) {
+      skipNextDecorationsSaveRef.current = false;
       return;
     }
 
-    setAquariumDecorations(
-      parseDecorations(localStorage.getItem(key))
-    );
-  }, [currentUser?.id]);
-
-  useEffect(() => {
-    const key = getDecorationsKey(currentUser?.id);
-
-    if (!key) {
+    // 로그인 확인/물고기 조회가 끝나기 전에 뜬 초기값([])을
+    // 저장해버리면 서버에 있던 배치를 지워버릴 수 있다.
+    if (!currentUser || fishLoading) {
       return;
     }
 
-    try {
-      localStorage.setItem(
-        key,
-        JSON.stringify(aquariumDecorations)
-      );
-    } catch (error) {
-      console.warn(
-        '어항 배치 저장 실패:',
-        error
-      );
-    }
+    const timeoutId = window.setTimeout(() => {
+      fetch(`${API_BASE}/api/aquarium-decorations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decorations: aquariumDecorations }),
+      }).catch((error) => {
+        console.error('❌ 어항 배치 저장 실패:', error);
+      });
+    }, 800);
+
+    return () => window.clearTimeout(timeoutId);
   }, [aquariumDecorations]);
 
   // ====================================================

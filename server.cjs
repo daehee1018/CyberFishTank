@@ -267,6 +267,16 @@ try {
   // 이미 있으면 예외. 정상 상황.
 }
 
+// 어항 장식(집/수초/동굴/구조물) 배치. 예전엔 브라우저
+// localStorage에만 저장돼서 기기/브라우저를 바꾸면 안 보였다.
+// JSON 배열을 그대로 문자열로 저장한다.
+try {
+  authDb.prepare("ALTER TABLE user_fish ADD COLUMN decorations_json TEXT NOT NULL DEFAULT '[]'").run();
+  console.log('✅ user_fish.decorations_json 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+
 // ============================================================
 // 저장된 AI 물고기 그래픽 목록
 //
@@ -288,7 +298,7 @@ authDb.prepare(`
 console.log('✅ fish_graphics 테이블 확인 완료');
 
 const getUserFishStmt = authDb.prepare(`
-  SELECT species, fish_name, color_hue, accessory, tank_theme, substrate_color, active_graphic_dir FROM user_fish WHERE user_id = ?
+  SELECT species, fish_name, color_hue, accessory, tank_theme, substrate_color, active_graphic_dir, decorations_json FROM user_fish WHERE user_id = ?
 `);
 
 const upsertUserFishStmt = authDb.prepare(`
@@ -314,6 +324,10 @@ const updateSubstrateColorStmt = authDb.prepare(`
 
 const updateActiveGraphicDirStmt = authDb.prepare(`
   UPDATE user_fish SET active_graphic_dir = @active_graphic_dir WHERE user_id = @user_id
+`);
+
+const updateDecorationsStmt = authDb.prepare(`
+  UPDATE user_fish SET decorations_json = @decorations_json WHERE user_id = @user_id
 `);
 
 const insertFishGraphicStmt = authDb.prepare(`
@@ -550,6 +564,17 @@ app.get('/api/me', (req, res) => {
 app.get('/api/fish', requireAuth, (req, res) => {
   const row = getUserFishStmt.get(req.session.userId);
 
+  let decorations = [];
+
+  if (row?.decorations_json) {
+    try {
+      const parsed = JSON.parse(row.decorations_json);
+      decorations = Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      decorations = [];
+    }
+  }
+
   res.json({
     success: true,
     fish: row
@@ -561,6 +586,7 @@ app.get('/api/fish', requireAuth, (req, res) => {
           tankTheme: row.tank_theme,
           substrateColor: row.substrate_color,
           activeGraphicDir: row.active_graphic_dir,
+          decorations,
         }
       : null,
   });
@@ -675,6 +701,50 @@ app.post('/api/tank-substrate', requireAuth, (req, res) => {
   });
 
   res.json({ success: true, substrateColor });
+});
+
+// ============================================================
+// 어항 장식(집/수초/동굴/구조물) 배치
+//
+// 예전엔 브라우저 localStorage에만 저장돼서 기기/브라우저를
+// 바꾸면 안 보였다. 다른 코스메틱 설정과 마찬가지로 서버에
+// 저장한다. 드래그/크기조절 중에는 매 프레임 저장하지 않고
+// 클라이언트가 디바운스해서 보낸다.
+// ============================================================
+
+const MAX_DECORATIONS = 100;
+
+app.post('/api/aquarium-decorations', requireAuth, (req, res) => {
+  const { decorations } = req.body || {};
+
+  if (!Array.isArray(decorations) || decorations.length > MAX_DECORATIONS) {
+    return res.status(400).json({ success: false, error: '장식 데이터가 올바르지 않습니다.' });
+  }
+
+  const isValidDecoration = (item) =>
+    item &&
+    typeof item.id === 'string' &&
+    typeof item.type === 'string' &&
+    typeof item.src === 'string' &&
+    Number.isFinite(item.x) &&
+    Number.isFinite(item.y);
+
+  if (!decorations.every(isValidDecoration)) {
+    return res.status(400).json({ success: false, error: '장식 데이터가 올바르지 않습니다.' });
+  }
+
+  const existing = getUserFishStmt.get(req.session.userId);
+
+  if (!existing) {
+    return res.status(400).json({ success: false, error: '먼저 물고기를 선택해주세요.' });
+  }
+
+  updateDecorationsStmt.run({
+    user_id: req.session.userId,
+    decorations_json: JSON.stringify(decorations),
+  });
+
+  res.json({ success: true });
 });
 
 // ============================================================
