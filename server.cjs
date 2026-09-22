@@ -4292,6 +4292,82 @@ app.get(
 
 
 // ============================================================
+// 오염도 판정용 기준선 (탁도/TDS)
+//
+// 절대 기준값(예: "TDS 150ppm 이상은 위험")은 이 센서의 실제
+// 캘리브레이션을 모르는 상태에서는 근거가 없다. 대신 이 어항
+// 자체의 전체 이력 평균/표준편차를 기준선으로 삼아 "평소보다
+// 얼마나 벗어났는지"로 오염도를 상대평가한다.
+// ============================================================
+
+const POLLUTION_BASELINE_MIN_SAMPLES = 20;
+
+app.get(
+  '/api/sensor-data/pollution-baseline',
+  requireAuth,
+  (req, res) => {
+
+    try {
+
+      const row =
+        db.prepare(`
+          SELECT
+            COUNT(*) AS sample_count,
+            AVG(turbidity_voltage) AS turbidity_mean,
+            AVG(turbidity_voltage * turbidity_voltage) AS turbidity_sq_mean,
+            AVG(tds) AS tds_mean,
+            AVG(tds * tds) AS tds_sq_mean
+          FROM sensor_data
+          WHERE user_id = ?
+        `).get(req.session.userId);
+
+      const sampleCount = row?.sample_count || 0;
+
+      if (sampleCount < POLLUTION_BASELINE_MIN_SAMPLES) {
+        return res.json({
+          success: true,
+          baseline: null,
+          sampleCount,
+        });
+      }
+
+      const turbidityVariance =
+        Math.max(0, row.turbidity_sq_mean - row.turbidity_mean ** 2);
+
+      const tdsVariance =
+        Math.max(0, row.tds_sq_mean - row.tds_mean ** 2);
+
+      res.json({
+        success: true,
+        sampleCount,
+        baseline: {
+          turbidity: {
+            mean: row.turbidity_mean,
+            std: Math.sqrt(turbidityVariance),
+          },
+          tds: {
+            mean: row.tds_mean,
+            std: Math.sqrt(tdsVariance),
+          },
+        },
+      });
+
+    } catch (error) {
+
+      console.error('❌ 오염도 기준선 조회 오류:', error);
+
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
 // 최근 N개 센서 데이터
 //
 // 예:

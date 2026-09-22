@@ -55,6 +55,45 @@ const Dashboard: React.FC = () => {
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState('');
 
+  // ====================================================
+  // 오염도 판정용 기준선 (이 어항의 전체 이력 평균/표준편차)
+  // ====================================================
+
+  const [pollutionBaseline, setPollutionBaseline] = useState<{
+    turbidity: { mean: number; std: number };
+    tds: { mean: number; std: number };
+  } | null>(null);
+
+  // admin 전용 미리보기: 실제 판정과 무관하게 화면에서만
+  // 오염도 단계를 강제로 바꿔서 물 색 변화를 확인할 수 있게 한다.
+  const [pollutionPreview, setPollutionPreview] = useState<number | null>(null);
+
+  useEffect(() => {
+    const loadPollutionBaseline = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/sensor-data/pollution-baseline`, {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        setPollutionBaseline(data.baseline ?? null);
+      } catch (err) {
+        console.error('❌ 오염도 기준선 조회 실패:', err);
+      }
+    };
+
+    loadPollutionBaseline();
+
+    // 기준선은 천천히 바뀌는 값이라 30분마다만 갱신한다.
+    const intervalId = window.setInterval(loadPollutionBaseline, 30 * 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   const myVideoRef = useRef<HTMLVideoElement>(null);
   const myCaptureCanvasRef = useRef<HTMLCanvasElement>(null);
   const myStreamRef = useRef<MediaStream | null>(null);
@@ -217,6 +256,93 @@ const Dashboard: React.FC = () => {
         ? '적정'
         : '낮음';
 
+  // ====================================================
+  // 오염도 (탁도 전압 + TDS, 이 어항 자체 이력 기반 상대평가)
+  //
+  // "TDS 150ppm 이상은 위험" 같은 절대 기준은 이 센서의 실제
+  // 캘리브레이션을 모르는 상태에서는 근거가 없다. 대신 이
+  // 어항의 전체 이력 평균/표준편차(서버가 계산해줌)를 기준선
+  // 삼아 "평소보다 얼마나 벗어났는지"로 판단한다.
+  //
+  // 탁도는 방향(맑을수록 전압이 오르는지 내리는지)을 모르니
+  // 평소와 다르면(±) 그 자체를 이상 신호로 본다. TDS는 방향이
+  // 명확하므로(높을수록 오염 물질↑) 평소보다 높아진 쪽만 본다.
+  // ====================================================
+
+  const turbidityVoltage =
+    sensorValues?.turbidity;
+
+  const tds =
+    sensorValues?.tds;
+
+  const zScoreToSeverity = (z: number | null) =>
+    z === null
+      ? null
+      : z < 1
+        ? 0
+        : z < 2.5
+          ? 1
+          : 2;
+
+  const turbidityBaseline =
+    pollutionBaseline?.turbidity;
+
+  const tdsBaseline =
+    pollutionBaseline?.tds;
+
+  const turbidityZ =
+    turbidityVoltage === undefined || !turbidityBaseline || turbidityBaseline.std < 0.001
+      ? null
+      : Math.abs(turbidityVoltage - turbidityBaseline.mean) / turbidityBaseline.std;
+
+  const tdsZ =
+    tds === undefined || !tdsBaseline || tdsBaseline.std < 0.001
+      ? null
+      : Math.max(0, (tds - tdsBaseline.mean) / tdsBaseline.std);
+
+  const turbiditySeverity =
+    zScoreToSeverity(turbidityZ);
+
+  const tdsSeverity =
+    zScoreToSeverity(tdsZ);
+
+  const pollutionSeverity =
+    turbiditySeverity === null && tdsSeverity === null
+      ? null
+      : Math.max(turbiditySeverity ?? 0, tdsSeverity ?? 0);
+
+  // admin이 실측값을 기다리지 않고도 색 변화를 눈으로 확인할 수 있는
+  // 미리보기 오버라이드. 실제 판정에는 영향 없음(화면 표시만 바뀜).
+  const effectivePollutionSeverity =
+    pollutionPreview !== null
+      ? pollutionPreview
+      : pollutionSeverity;
+
+  const pollutionStatus =
+    effectivePollutionSeverity === null
+      ? '정보'
+      : effectivePollutionSeverity === 0
+        ? '정상'
+        : effectivePollutionSeverity === 1
+          ? '주의'
+          : '위험';
+
+  const pollutionLabel =
+    effectivePollutionSeverity !== null
+      ? pollutionStatus
+      : pollutionBaseline === null && sensorValues
+        ? '기준 수집 중'
+        : '데이터 없음';
+
+  const WATER_COLORS: Record<number, string> = {
+    0: '#58b9d8', // 정상 - 맑은 파랑
+    1: '#8a9a5b', // 주의 - 탁한 연두빛
+    2: '#7a5c3e', // 위험 - 흙탕 갈색
+  };
+
+  const waterColor =
+    WATER_COLORS[effectivePollutionSeverity ?? 0];
+
   const bottomStats = [
     {
       label: '수온',
@@ -246,9 +372,9 @@ const Dashboard: React.FC = () => {
           : waterLevelStatus,
     },
     {
-      label: '조도',
-      value: '데이터 없음',
-      status: '정보',
+      label: '오염도',
+      value: pollutionLabel,
+      status: pollutionStatus,
     },
   ];
 
@@ -452,6 +578,51 @@ const Dashboard: React.FC = () => {
             </div>
           )}
 
+          {/* ---------------------------------------------
+              오염도 미리보기 (admin 전용)
+
+              실측값을 기다리지 않고도 물 색 변화를 눈으로
+              확인할 수 있게 하는 디버그용 버튼. 화면 표시만
+              바꾸고 실제 판정/DB에는 영향 없음.
+              --------------------------------------------- */}
+
+          {isPhysicalTankOwner && (
+            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-3">
+              <span className="text-xs font-medium text-slate-500">
+                오염도 미리보기
+              </span>
+
+              {[
+                { severity: 0, label: '정상' },
+                { severity: 1, label: '주의' },
+                { severity: 2, label: '위험' },
+              ].map((option) => (
+                <button
+                  key={option.severity}
+                  onClick={() => setPollutionPreview(option.severity)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    pollutionPreview === option.severity
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+
+              <button
+                onClick={() => setPollutionPreview(null)}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                  pollutionPreview === null
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                실측값으로
+              </button>
+            </div>
+          )}
+
 
           {/* =================================================
               어항 화면
@@ -486,6 +657,7 @@ const Dashboard: React.FC = () => {
                 <Aquarium
                   showFish={false}
                   decorations={aquariumDecorations}
+                  waterColor={waterColor}
                 >
 
                   <Fish2D

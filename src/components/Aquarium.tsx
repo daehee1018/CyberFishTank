@@ -6,10 +6,12 @@ export default function Aquarium({
   children,
   showFish = true,
   decorations = [],
+  waterColor = '#58b9d8',
 }: {
   children?: React.ReactNode;
   showFish?: boolean;
   decorations?: AquariumDecoration[];
+  waterColor?: string;
 }) {
   const [fish, setFish] = useState({
     id: 1,
@@ -190,9 +192,13 @@ export default function Aquarium({
         position: 'relative',
         overflow: 'hidden',
 
-        // 평면 실루엣 그래픽과 맞는 단색 물 배경
+        // 평면 실루엣 그래픽과 맞는 단색 물 배경.
+        // 오염도(탁도+TDS)에 따라 Dashboard가 색을 바꿔서 넘겨준다.
         backgroundColor:
-          '#58b9d8',
+          waterColor,
+
+        transition:
+          'background-color 1.5s ease',
 
         boxShadow:
           'inset 0 0 18px rgba(15,23,42,0.1)',
