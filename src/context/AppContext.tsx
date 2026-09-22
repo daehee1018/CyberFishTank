@@ -228,6 +228,21 @@ interface AppContextType {
     substrateColor: string
   ) => Promise<{ success: boolean; error?: string }>;
 
+  // 지금 화면에 쓰이는 AI 생성 그래픽 폴더 이름. 비어있으면
+  // 예전 방식(fish_sprites/{userId}/ 바로 아래)을 그대로 쓴다.
+  activeGraphicDir: string;
+
+  // /api/fish를 다시 조회해서 색상/액세서리/테마/그래픽 등을
+  // 최신 상태로 맞춘다. 그래픽 갤러리에서 선택/삭제한 직후처럼,
+  // 서버 상태가 바뀐 걸 즉시 반영해야 할 때 쓴다.
+  refreshFish: () => Promise<void>;
+
+  // admin 전용 오염도 미리보기(실제 판정과 무관하게 화면 표시만
+  // 강제로 바꾸는 디버그 값). Dashboard와 관리자 테스트 페이지가
+  // 같이 써야 해서 전역 상태로 둔다.
+  pollutionPreview: number | null;
+  setPollutionPreview: (val: number | null) => void;
+
   confirmCameraSetup: () => Promise<{ success: boolean; error?: string }>;
 
   notificationsEnabled: boolean;
@@ -469,6 +484,7 @@ export const AppProvider: React.FC<{
       setFishAccessory('');
       setTankTheme('default');
       setSubstrateColor('natural');
+      setActiveGraphicDir('');
     }
   };
 
@@ -498,6 +514,7 @@ export const AppProvider: React.FC<{
       setFishAccessory('');
       setTankTheme('default');
       setSubstrateColor('natural');
+      setActiveGraphicDir('');
       return;
     }
 
@@ -529,6 +546,7 @@ export const AppProvider: React.FC<{
             setFishAccessory(data.fish.accessory ?? '');
             setTankTheme(data.fish.tankTheme || 'default');
             setSubstrateColor(data.fish.substrateColor || 'natural');
+            setActiveGraphicDir(data.fish.activeGraphicDir || '');
           } else {
             setFishSpecies(null);
             setFishName('');
@@ -536,6 +554,7 @@ export const AppProvider: React.FC<{
             setFishAccessory('');
             setTankTheme('default');
             setSubstrateColor('natural');
+            setActiveGraphicDir('');
           }
 
           setFishLoading(false);
@@ -651,6 +670,36 @@ export const AppProvider: React.FC<{
     }
   };
 
+  // /api/fish를 다시 조회해서 색상/액세서리/테마/바닥재/활성
+  // 그래픽을 한 번에 최신 상태로 맞춘다. 그래픽 갤러리에서
+  // 선택/삭제한 직후처럼 즉시 반영이 필요할 때 쓴다.
+  const refreshFish = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/fish`, {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.fish) {
+        setFishSpecies(data.fish.species);
+        setFishName(data.fish.fishName);
+        setFishColorHue(data.fish.colorHue ?? 0);
+        setFishAccessory(data.fish.accessory ?? '');
+        setTankTheme(data.fish.tankTheme || 'default');
+        setSubstrateColor(data.fish.substrateColor || 'natural');
+        setActiveGraphicDir(data.fish.activeGraphicDir || '');
+      }
+    } catch (error) {
+      console.error('❌ 물고기 정보 새로고침 실패:', error);
+    }
+  };
+
   // 카메라 연결(필수 단계) 완료 표시.
   // 성공하면 currentUser도 즉시 갱신해서 재로그인 없이 바로 반영되게 한다.
   const confirmCameraSetup = async () => {
@@ -707,6 +756,12 @@ export const AppProvider: React.FC<{
 
   const [substrateColor, setSubstrateColor] =
     useState('natural');
+
+  const [activeGraphicDir, setActiveGraphicDir] =
+    useState('');
+
+  const [pollutionPreview, setPollutionPreview] =
+    useState<number | null>(null);
 
   const [notificationsEnabled, setNotificationsEnabled] =
     useState(true);
@@ -2119,6 +2174,10 @@ export const AppProvider: React.FC<{
     updateTankTheme,
     substrateColor,
     updateSubstrateColor,
+    activeGraphicDir,
+    refreshFish,
+    pollutionPreview,
+    setPollutionPreview,
     confirmCameraSetup,
 
     notificationsEnabled,

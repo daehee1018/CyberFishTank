@@ -9,6 +9,7 @@ import Login from './pages/Login/Login';
 import Signup from './pages/Login/Signup';
 import FishSelect from './pages/FishSelect/FishSelect';
 import CameraSetup from './pages/CameraSetup/CameraSetup';
+import AdminTest from './pages/AdminTest/AdminTest';
 import { useAppContext } from './context/AppContext';
 
 function RequireAuth() {
@@ -88,6 +89,11 @@ export default function App() {
             <Route
               path="personal-settings"
               element={<PersonalSettings />}
+            />
+
+            <Route
+              path="admin-test"
+              element={<AdminTest />}
             />
 
           </Route>

@@ -1,11 +1,115 @@
 // src/components/FishSettings.tsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useAppContext } from '../context/AppContext';
+
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  'https://ggnu.site';
+
+type FishGraphic = {
+  id: number;
+  styleName: string;
+  dirName: string;
+  createdAt: string;
+};
 
 export default function FishSettings() {
+  const { currentUser, activeGraphicDir, refreshFish } = useAppContext();
+
   const [file, setFile] = useState<File | null>(null);
   const [candidates, setCandidates] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeStyle, setActiveStyle] = useState<string>('');
+
+  // ============================================================
+  // 저장된 그래픽 목록 (예전엔 스타일을 새로 고를 때마다
+  // 이전 결과가 사라졌는데, 이제 매번 새로 저장되고 다시
+  // 골라 쓸 수 있다)
+  // ============================================================
+
+  const [graphics, setGraphics] = useState<FishGraphic[]>([]);
+  const [graphicsLoading, setGraphicsLoading] = useState(true);
+  const [switchingId, setSwitchingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const loadGraphics = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/fish/graphics`, {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setGraphics(data.graphics);
+      }
+    } catch (err) {
+      console.error('[FishSettings] 그래픽 목록 조회 실패:', err);
+    } finally {
+      setGraphicsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadGraphics();
+  }, []);
+
+  const handleSelectGraphic = async (graphicId: number) => {
+    setSwitchingId(graphicId);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/fish/graphics/select`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ graphicId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || '그래픽 적용에 실패했습니다.');
+      }
+
+      await refreshFish();
+      window.dispatchEvent(new Event('fish-style-changed'));
+    } catch (err) {
+      console.error('[FishSettings] 그래픽 선택 오류:', err);
+      alert(err instanceof Error ? err.message : '그래픽 적용에 실패했습니다.');
+    } finally {
+      setSwitchingId(null);
+    }
+  };
+
+  const handleDeleteGraphic = async (graphicId: number) => {
+    if (!confirm('이 그래픽을 삭제할까요? 되돌릴 수 없습니다.')) {
+      return;
+    }
+
+    setDeletingId(graphicId);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/fish/graphics/${graphicId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || '삭제에 실패했습니다.');
+      }
+
+      await loadGraphics();
+      await refreshFish();
+    } catch (err) {
+      console.error('[FishSettings] 그래픽 삭제 오류:', err);
+      alert(err instanceof Error ? err.message : '삭제에 실패했습니다.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // ============================================================
   // 파일 선택
@@ -49,7 +153,7 @@ export default function FishSettings() {
     try {
 
       const res = await fetch(
-        '/api/upload-fish',
+        `${API_BASE}/api/upload-fish`,
         {
           method: 'POST',
           body: formData,
@@ -125,7 +229,7 @@ export default function FishSettings() {
     try {
 
       const res = await fetch(
-        '/api/select-style',
+        `${API_BASE}/api/select-style`,
         {
           method: 'POST',
 
@@ -152,20 +256,18 @@ export default function FishSettings() {
 
       if (data.success) {
 
-        // 현재 선택된 물고기 스타일 저장
-        localStorage.setItem(
-        'selectedFishStyle',
-        styleName
-      );
+        // 새로 생성된 그래픽이 목록/활성 그래픽에 바로 반영되게 한다.
+        await loadGraphics();
+        await refreshFish();
 
-      // Fish2D에게 새 이미지가 생성되었다고 알림
-      window.dispatchEvent(
-        new Event('fish-style-changed')
-      );
+        // Fish2D에게 새 이미지가 생성되었다고 알림
+        window.dispatchEvent(
+          new Event('fish-style-changed')
+        );
 
-      alert(
-        '🎉 8방향 디지털 트윈 에셋 생성이 완료되었습니다! 어항에 적용되었습니다.'
-      );
+        alert(
+          '🎉 8방향 디지털 트윈 에셋 생성이 완료되었습니다! 어항에 적용되었습니다.'
+        );
 } else {
 
         throw new Error(
@@ -417,6 +519,93 @@ export default function FishSettings() {
 
         </div>
 
+      )}
+
+      {/* ========================================================
+          저장된 그래픽 목록
+
+          예전엔 새 스타일을 고를 때마다 이전 결과가 사라졌는데,
+          이제 매번 새로 저장되고 여기서 다시 골라 쓸 수 있다.
+          ======================================================== */}
+
+      {!graphicsLoading && graphics.length > 0 && (
+        <div className="mt-4 rounded-[16px] border border-slate-200 bg-slate-50 p-4">
+          <p className="mb-3 text-xs font-semibold text-slate-700">
+            🖼️ 저장된 그래픽 ({graphics.length}개) — 클릭하면 바로 적용됩니다
+          </p>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {graphics.map((graphic) => {
+              const isActive = graphic.dirName === activeGraphicDir;
+              const isBusy = switchingId === graphic.id || deletingId === graphic.id;
+
+              return (
+                <div
+                  key={graphic.id}
+                  className={`relative rounded-[12px] border-2 bg-white p-2 text-center transition-all duration-200 ${
+                    isActive
+                      ? 'border-emerald-500 bg-emerald-50/30 shadow-md'
+                      : 'cursor-pointer border-slate-200 hover:border-blue-300 hover:shadow-sm'
+                  } ${isBusy ? 'pointer-events-none opacity-60' : ''}`}
+                  onClick={() => {
+                    if (!isActive) {
+                      handleSelectGraphic(graphic.id);
+                    }
+                  }}
+                >
+                  <img
+                    src={
+                      graphic.dirName
+                        ? `/fish_sprites/${currentUser?.id}/${graphic.dirName}/fish_right.png?v=3`
+                        : `/fish_sprites/${currentUser?.id}/fish_right.png?v=3`
+                    }
+                    alt={graphic.styleName}
+                    className="mb-2 aspect-square w-full rounded-[6px] object-contain"
+                    onError={(event) => {
+                      // "기본 그래픽"인데 개인 파일이 없으면(한 번도
+                      // 만든 적 없음) 사이트 공용 기본 이미지로 대체한다.
+                      event.currentTarget.onerror = null;
+                      event.currentTarget.src = '/fish_sprites/fish_right.png?v=3';
+                    }}
+                  />
+
+                  <div className="truncate px-1 text-[11px] font-medium text-slate-600">
+                    {new Date(graphic.createdAt).toLocaleDateString('ko-KR', {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </div>
+
+                  {isActive && (
+                    <div className="absolute right-1.5 top-1.5 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                      사용중
+                    </div>
+                  )}
+
+                  {!isActive && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteGraphic(graphic.id);
+                      }}
+                      className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm hover:bg-red-50 hover:text-red-500"
+                      aria-label="삭제"
+                    >
+                      ✕
+                    </button>
+                  )}
+
+                  {switchingId === graphic.id && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-[12px] bg-white/70 text-[11px] font-medium text-slate-500">
+                      적용 중...
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
     </div>

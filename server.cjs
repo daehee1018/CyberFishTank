@@ -258,8 +258,37 @@ try {
   // 이미 있으면 예외. 정상 상황.
 }
 
+// 현재 화면에 쓰이는 AI 생성 그래픽이 어느 폴더(fish_sprites/{userId}/{dir})에
+// 있는지. 비어있으면 옛날 방식(fish_sprites/{userId}/ 바로 아래)을 그대로 쓴다.
+try {
+  authDb.prepare("ALTER TABLE user_fish ADD COLUMN active_graphic_dir TEXT NOT NULL DEFAULT ''").run();
+  console.log('✅ user_fish.active_graphic_dir 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+
+// ============================================================
+// 저장된 AI 물고기 그래픽 목록
+//
+// 예전엔 스타일을 새로 고를 때마다 fish_sprites/{userId}/를
+// 덮어써서 이전 결과가 사라졌다. 이제 매번 새 폴더에 생성하고
+// 이 테이블에 기록해서, 나중에 다시 골라 쓸 수 있게 한다.
+// ============================================================
+
+authDb.prepare(`
+  CREATE TABLE IF NOT EXISTS fish_graphics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    style_name TEXT NOT NULL,
+    dir_name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )
+`).run();
+
+console.log('✅ fish_graphics 테이블 확인 완료');
+
 const getUserFishStmt = authDb.prepare(`
-  SELECT species, fish_name, color_hue, accessory, tank_theme, substrate_color FROM user_fish WHERE user_id = ?
+  SELECT species, fish_name, color_hue, accessory, tank_theme, substrate_color, active_graphic_dir FROM user_fish WHERE user_id = ?
 `);
 
 const upsertUserFishStmt = authDb.prepare(`
@@ -281,6 +310,30 @@ const updateTankThemeStmt = authDb.prepare(`
 
 const updateSubstrateColorStmt = authDb.prepare(`
   UPDATE user_fish SET substrate_color = @substrate_color WHERE user_id = @user_id
+`);
+
+const updateActiveGraphicDirStmt = authDb.prepare(`
+  UPDATE user_fish SET active_graphic_dir = @active_graphic_dir WHERE user_id = @user_id
+`);
+
+const insertFishGraphicStmt = authDb.prepare(`
+  INSERT INTO fish_graphics (user_id, style_name, dir_name, created_at)
+  VALUES (@user_id, @style_name, @dir_name, @created_at)
+`);
+
+const listFishGraphicsStmt = authDb.prepare(`
+  SELECT id, style_name, dir_name, created_at FROM fish_graphics
+  WHERE user_id = ?
+  ORDER BY id DESC
+`);
+
+const getFishGraphicStmt = authDb.prepare(`
+  SELECT id, style_name, dir_name, created_at FROM fish_graphics
+  WHERE id = ? AND user_id = ?
+`);
+
+const deleteFishGraphicStmt = authDb.prepare(`
+  DELETE FROM fish_graphics WHERE id = ? AND user_id = ?
 `);
 
 const ACCESSORY_OPTIONS = ['', 'hat', 'crown', 'ribbon', 'sunglasses', 'flower'];
@@ -507,6 +560,7 @@ app.get('/api/fish', requireAuth, (req, res) => {
           accessory: row.accessory,
           tankTheme: row.tank_theme,
           substrateColor: row.substrate_color,
+          activeGraphicDir: row.active_graphic_dir,
         }
       : null,
   });
@@ -1331,11 +1385,35 @@ const getLatestAlertByTypeStmt = db.prepare(`
 // ============================================================
 // 알람 디바운싱(쿨다운)
 //
-// 동일한 알람 type은 5분 이내 중복 저장하지 않음
-// - 메모리 기준: 같은 서버 실행 중 즉시 중복 차단
-// - DB 기준: 서버 재시작 직후에도 최근 5분 중복 차단
+// 기본은 5분이지만, 다 같은 무게가 아니다. 수온/pH는 살짝
+// 벗어난 채로 몇 시간씩 유지되는 일이 흔한데 5분마다 계속
+// 재알림하면(실측: 하루 7시간 만에 최근 100개 알림 한도를
+// 다 채워버려 정작 오래된 기록이 안 보이는 문제가 생겼다)
+// 정작 중요한 배뒤집힘/수위저하/물갈이 알림이 묻힌다. 중요도가
+// 낮은 타입은 쿨다운을 길게, 급한 타입은 짧게 유지한다.
 // ============================================================
 const ALERT_COOLDOWN = 5 * 60 * 1000;
+
+const ALERT_COOLDOWN_OVERRIDES = {
+  // 수온/pH: 응급 상황이 아니라 서서히 벗어나는 값이라, 벗어난
+  // 상태가 지속돼도 1시간에 한 번만 다시 알린다.
+  'temperature-increase': 60 * 60 * 1000,
+  'temperature-decrease': 60 * 60 * 1000,
+  'ph-increase': 60 * 60 * 1000,
+  'ph-decrease': 60 * 60 * 1000,
+  // 물갈이 권장: 센서 저장 주기(10분)마다 "위험" 지속 스트릭이
+  // 계속 조건을 만족해서 createAlertIfAllowed가 계속 불리는데,
+  // 기본 쿨다운(5분)은 10분보다 짧아 매번 통과돼 버린다 —
+  // 그대로 두면 물갈이 안 해도 10분마다 계속 알림이 쌓인다.
+  // 한 번 알렸으면 6시간은 다시 안 알린다.
+  'water-quality-warning': 6 * 60 * 60 * 1000,
+  // 수위저하/배뒤집힘은 응급이라 기본값(5분) 그대로 빠르게 유지한다.
+};
+
+function getAlertCooldown(type) {
+  return ALERT_COOLDOWN_OVERRIDES[type] ?? ALERT_COOLDOWN;
+}
+
 const lastAlertTimeByType = new Map();
 
 const findRecentAlertStmt = db.prepare(`
@@ -1937,13 +2015,19 @@ app.post(
         safeStyleName
       );
 
-    // 계정별로 생성 결과를 분리 저장
+    // 예전엔 fish_sprites/{userId}/를 매번 덮어써서 이전에 만든
+    // 그래픽이 사라졌다. 이제 매번 새 폴더(타임스탬프)에 생성해서
+    // fish_graphics 테이블에 기록해두고, 나중에 다시 골라 쓸 수
+    // 있게 한다.
+    const dirName = `${Date.now()}_${safeStyleName.replace(/\.png$/i, '')}`;
+
     const outDir =
       path.join(
         __dirname,
         'public',
         'fish_sprites',
-        String(req.session.userId)
+        String(req.session.userId),
+        dirName
       );
 
     if (!fs.existsSync(inputPath)) {
@@ -1982,8 +2066,34 @@ app.post(
 
         console.log(stdout);
 
+        const userId = req.session.userId;
+        const nowIso = new Date().toISOString();
+
+        const result = insertFishGraphicStmt.run({
+          user_id: userId,
+          style_name: safeStyleName,
+          dir_name: dirName,
+          created_at: nowIso,
+        });
+
+        // 물고기(species)를 아직 선택 안 한 계정은 user_fish 행이
+        // 없을 수 있다 — 그 경우 "활성 그래픽"만 못 정할 뿐, 생성
+        // 자체와 목록 기록은 그대로 성공 처리한다.
+        if (getUserFishStmt.get(userId)) {
+          updateActiveGraphicDirStmt.run({
+            user_id: userId,
+            active_graphic_dir: dirName,
+          });
+        }
+
         return res.json({
-          success: true
+          success: true,
+          graphic: {
+            id: Number(result.lastInsertRowid),
+            styleName: safeStyleName,
+            dirName,
+            createdAt: nowIso,
+          },
         });
 
       }
@@ -1991,6 +2101,142 @@ app.post(
 
   }
 );
+
+// ============================================================
+// 저장된 AI 물고기 그래픽 목록 / 선택 / 삭제
+// ============================================================
+
+// dir_name=''은 "버전 폴더 없이 쓰는 상태"를 뜻한다 — 이 기능
+// (버전 관리) 이전에 개인 그래픽을 만들어뒀다면
+// fish_sprites/{userId}/fish_right.png가 실제로 있어서 그걸
+// 보여주고, 한 번도 만든 적 없으면 Fish2D가 알아서 사이트
+// 공용 기본 이미지로 대체한다. 어느 쪽이든 "선택 가능한 항목"
+// 으로 목록에 항상 하나는 있어야 사용자가 원래대로 되돌릴 수
+// 있어서, 파일 존재 여부와 무관하게 dir_name='' 행을 보장해준다.
+function ensureDefaultGraphicRecorded(userId) {
+  const alreadyRecorded = authDb
+    .prepare(`SELECT id FROM fish_graphics WHERE user_id = ? AND dir_name = ''`)
+    .get(userId);
+
+  if (alreadyRecorded) {
+    return;
+  }
+
+  const legacyImagePath = path.join(
+    __dirname,
+    'public',
+    'fish_sprites',
+    String(userId),
+    'fish_right.png'
+  );
+
+  const createdAt = fs.existsSync(legacyImagePath)
+    ? fs.statSync(legacyImagePath).mtime.toISOString()
+    : new Date(0).toISOString();
+
+  insertFishGraphicStmt.run({
+    user_id: userId,
+    style_name: '기본 그래픽',
+    dir_name: '',
+    created_at: createdAt,
+  });
+}
+
+app.get('/api/fish/graphics', requireAuth, (req, res) => {
+  ensureDefaultGraphicRecorded(req.session.userId);
+
+  const rows = listFishGraphicsStmt.all(req.session.userId);
+
+  res.json({
+    success: true,
+    graphics: rows.map((row) => ({
+      id: row.id,
+      styleName: row.style_name,
+      dirName: row.dir_name,
+      createdAt: row.created_at,
+    })),
+  });
+});
+
+app.post('/api/fish/graphics/select', requireAuth, (req, res) => {
+  const { graphicId } = req.body || {};
+
+  const graphic = getFishGraphicStmt.get(Number(graphicId), req.session.userId);
+
+  if (!graphic) {
+    return res.status(404).json({ success: false, error: '그래픽을 찾을 수 없습니다.' });
+  }
+
+  if (!getUserFishStmt.get(req.session.userId)) {
+    return res.status(400).json({ success: false, error: '먼저 물고기를 선택해주세요.' });
+  }
+
+  updateActiveGraphicDirStmt.run({
+    user_id: req.session.userId,
+    active_graphic_dir: graphic.dir_name,
+  });
+
+  res.json({ success: true, activeGraphicDir: graphic.dir_name });
+});
+
+app.delete('/api/fish/graphics/:id', requireAuth, (req, res) => {
+  const graphic = getFishGraphicStmt.get(Number(req.params.id), req.session.userId);
+
+  if (!graphic) {
+    return res.status(404).json({ success: false, error: '그래픽을 찾을 수 없습니다.' });
+  }
+
+  deleteFishGraphicStmt.run(graphic.id, req.session.userId);
+
+  const userSpriteDir = path.join(
+    __dirname,
+    'public',
+    'fish_sprites',
+    String(req.session.userId)
+  );
+
+  if (graphic.dir_name) {
+    // 버전 폴더라 그 폴더만 통째로 지워도 안전하다.
+    fs.rm(path.join(userSpriteDir, graphic.dir_name), { recursive: true, force: true }, (error) => {
+      if (error) {
+        console.error('❌ 그래픽 폴더 삭제 실패:', error);
+      }
+    });
+  } else {
+    // "기존 그래픽"(dir_name='')은 fish_sprites/{userId}/ 바로
+    // 아래 흩어져 있는 파일들이다. 이 디렉터리엔 다른 버전
+    // 폴더들도 같이 들어있으니, 디렉터리 자체를 지우면 안 되고
+    // 느슨한 png 파일들만 골라서 지운다.
+    fs.readdir(userSpriteDir, { withFileTypes: true }, (error, entries) => {
+      if (error) {
+        console.error('❌ 기존 그래픽 파일 조회 실패:', error);
+        return;
+      }
+
+      entries
+        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.png'))
+        .forEach((entry) => {
+          fs.unlink(path.join(userSpriteDir, entry.name), (unlinkError) => {
+            if (unlinkError) {
+              console.error('❌ 기존 그래픽 파일 삭제 실패:', unlinkError);
+            }
+          });
+        });
+    });
+  }
+
+  // 지금 쓰고 있던 그래픽을 지웠으면 기본값(옛날 방식 경로)으로 되돌린다.
+  const userFishRow = getUserFishStmt.get(req.session.userId);
+
+  if (userFishRow?.active_graphic_dir === graphic.dir_name) {
+    updateActiveGraphicDirStmt.run({
+      user_id: req.session.userId,
+      active_graphic_dir: '',
+    });
+  }
+
+  res.json({ success: true });
+});
 
 
 // ============================================================
@@ -3684,6 +3930,12 @@ function saveSensorData(data, userId) {
       Date.now()
     );
 
+    handlePollutionAlert(
+      userId,
+      data.turbidity_voltage,
+      data.tds
+    );
+
 
     console.log('');
     
@@ -3777,12 +4029,56 @@ function handleAbnormalBehaviorAlert(userId, abnormalReason) {
   }
 }
 
+// ============================================================
+// 물갈이 추천 알림
+//
+// 대시보드의 오염도 미리보기(정상/주의/위험)와 같은 z-score
+// 기준을 서버에서도 계산해서, "위험" 등급이 한 번이 아니라
+// 어느 정도 지속될 때만 알림을 남긴다. 센서 저장 주기가
+// 10분이라 3번 연속(30분)으로 잡는다 — flipped_pose(3분)보다
+// 훨씬 느슨한 건, 수질 변화는 자세 이상보다 천천히 움직이는
+// 신호라서다.
+// ============================================================
+
+const POLLUTION_ALERT_SUSTAINED_SAVES = 3;
+const pollutionDangerStreakByUser = new Map();
+
+function handlePollutionAlert(userId, turbidityVoltage, tds) {
+  const { baseline } = computePollutionBaseline(userId);
+
+  if (!baseline) {
+    pollutionDangerStreakByUser.delete(userId);
+    return;
+  }
+
+  const severity = computePollutionSeverity(baseline, turbidityVoltage, tds);
+
+  if (severity !== 2) {
+    pollutionDangerStreakByUser.delete(userId);
+    return;
+  }
+
+  const streak = (pollutionDangerStreakByUser.get(userId) || 0) + 1;
+  pollutionDangerStreakByUser.set(userId, streak);
+
+  if (streak >= POLLUTION_ALERT_SUSTAINED_SAVES) {
+    createAlertIfAllowed({
+      type: 'water-quality-warning',
+      title: '물갈이 권장',
+      detail: '탁도/TDS가 평소보다 크게 벗어난 상태가 계속되고 있습니다. 물갈이를 권장합니다.',
+      eventTime: new Date().toISOString(),
+      userId
+    });
+  }
+}
+
 function createAlertIfAllowed({
   title,
   detail,
   type,
   eventTime,
-  userId
+  userId,
+  skipCooldown = false
 }) {
   const eventDate = new Date(eventTime);
   const eventTimeMs = eventDate.getTime();
@@ -3793,38 +4089,43 @@ function createAlertIfAllowed({
 
   // 디바운스/조회는 계정별로 나눠야 서로 안 섞인다.
   const debounceKey = `${userId}:${type}`;
+  const cooldown = getAlertCooldown(type);
 
-  // ============================================================
-  // 1. 메모리 기반 5분 디바운싱
-  // ============================================================
+  if (!skipCooldown) {
 
-  const lastMemoryTime = lastAlertTimeByType.get(debounceKey);
+    // ============================================================
+    // 1. 메모리 기반 디바운싱
+    // ============================================================
 
-  if (
-    lastMemoryTime !== undefined &&
-    eventTimeMs - lastMemoryTime < ALERT_COOLDOWN
-  ) {
-    return null;
-  }
-
-  // ============================================================
-  // 2. DB 기반 5분 디바운싱
-  // 서버 재시작 후에도 중복 방지
-  // ============================================================
-
-  const latestAlert = getLatestAlertByTypeStmt.get(type, userId);
-
-  if (latestAlert) {
-    const latestTimeMs = new Date(latestAlert.time).getTime();
+    const lastMemoryTime = lastAlertTimeByType.get(debounceKey);
 
     if (
-      Number.isFinite(latestTimeMs) &&
-      eventTimeMs >= latestTimeMs &&
-      eventTimeMs - latestTimeMs < ALERT_COOLDOWN
+      lastMemoryTime !== undefined &&
+      eventTimeMs - lastMemoryTime < cooldown
     ) {
-      lastAlertTimeByType.set(debounceKey, latestTimeMs);
       return null;
     }
+
+    // ============================================================
+    // 2. DB 기반 디바운싱
+    // 서버 재시작 후에도 중복 방지
+    // ============================================================
+
+    const latestAlert = getLatestAlertByTypeStmt.get(type, userId);
+
+    if (latestAlert) {
+      const latestTimeMs = new Date(latestAlert.time).getTime();
+
+      if (
+        Number.isFinite(latestTimeMs) &&
+        eventTimeMs >= latestTimeMs &&
+        eventTimeMs - latestTimeMs < cooldown
+      ) {
+        lastAlertTimeByType.set(debounceKey, latestTimeMs);
+        return null;
+      }
+    }
+
   }
 
   // ============================================================
@@ -4456,6 +4757,78 @@ app.get(
 
 const POLLUTION_BASELINE_MIN_SAMPLES = 20;
 
+// 알림 시스템(서버)과 대시보드 미리보기(클라이언트)가 같은 기준선을
+// 써야 하므로 쿼리를 함수로 분리해서 공유한다.
+function computePollutionBaseline(userId) {
+  const row =
+    db.prepare(`
+      SELECT
+        COUNT(*) AS sample_count,
+        AVG(turbidity_voltage) AS turbidity_mean,
+        AVG(turbidity_voltage * turbidity_voltage) AS turbidity_sq_mean,
+        AVG(tds) AS tds_mean,
+        AVG(tds * tds) AS tds_sq_mean
+      FROM sensor_data
+      WHERE user_id = ?
+    `).get(userId);
+
+  const sampleCount = row?.sample_count || 0;
+
+  if (sampleCount < POLLUTION_BASELINE_MIN_SAMPLES) {
+    return { sampleCount, baseline: null };
+  }
+
+  const turbidityVariance =
+    Math.max(0, row.turbidity_sq_mean - row.turbidity_mean ** 2);
+
+  const tdsVariance =
+    Math.max(0, row.tds_sq_mean - row.tds_mean ** 2);
+
+  return {
+    sampleCount,
+    baseline: {
+      turbidity: {
+        mean: row.turbidity_mean,
+        std: Math.sqrt(turbidityVariance),
+      },
+      tds: {
+        mean: row.tds_mean,
+        std: Math.sqrt(tdsVariance),
+      },
+    },
+  };
+}
+
+// 클라이언트(Dashboard)의 z-score → 오염도 등급 판정과 동일한
+// 공식. 서버 알림도 같은 기준으로 판단해야 앱에 보이는 표시와
+// 실제로 알림이 뜨는 조건이 어긋나지 않는다.
+function computePollutionSeverity(baseline, turbidityVoltage, tds) {
+  const zScoreToSeverity = (z) =>
+    z === null ? null : z < 1 ? 0 : z < 2.5 ? 1 : 2;
+
+  const turbidityZ =
+    turbidityVoltage === null ||
+    turbidityVoltage === undefined ||
+    !baseline?.turbidity ||
+    baseline.turbidity.std < 0.001
+      ? null
+      : Math.abs(turbidityVoltage - baseline.turbidity.mean) / baseline.turbidity.std;
+
+  const tdsZ =
+    tds === null || tds === undefined || !baseline?.tds || baseline.tds.std < 0.001
+      ? null
+      : Math.max(0, (tds - baseline.tds.mean) / baseline.tds.std);
+
+  const turbiditySeverity = zScoreToSeverity(turbidityZ);
+  const tdsSeverity = zScoreToSeverity(tdsZ);
+
+  if (turbiditySeverity === null && tdsSeverity === null) {
+    return null;
+  }
+
+  return Math.max(turbiditySeverity ?? 0, tdsSeverity ?? 0);
+}
+
 app.get(
   '/api/sensor-data/pollution-baseline',
   requireAuth,
@@ -4463,47 +4836,12 @@ app.get(
 
     try {
 
-      const row =
-        db.prepare(`
-          SELECT
-            COUNT(*) AS sample_count,
-            AVG(turbidity_voltage) AS turbidity_mean,
-            AVG(turbidity_voltage * turbidity_voltage) AS turbidity_sq_mean,
-            AVG(tds) AS tds_mean,
-            AVG(tds * tds) AS tds_sq_mean
-          FROM sensor_data
-          WHERE user_id = ?
-        `).get(req.session.userId);
-
-      const sampleCount = row?.sample_count || 0;
-
-      if (sampleCount < POLLUTION_BASELINE_MIN_SAMPLES) {
-        return res.json({
-          success: true,
-          baseline: null,
-          sampleCount,
-        });
-      }
-
-      const turbidityVariance =
-        Math.max(0, row.turbidity_sq_mean - row.turbidity_mean ** 2);
-
-      const tdsVariance =
-        Math.max(0, row.tds_sq_mean - row.tds_mean ** 2);
+      const { sampleCount, baseline } = computePollutionBaseline(req.session.userId);
 
       res.json({
         success: true,
         sampleCount,
-        baseline: {
-          turbidity: {
-            mean: row.turbidity_mean,
-            std: Math.sqrt(turbidityVariance),
-          },
-          tds: {
-            mean: row.tds_mean,
-            std: Math.sqrt(tdsVariance),
-          },
-        },
+        baseline,
       });
 
     } catch (error) {
@@ -4913,12 +5251,14 @@ app.post('/api/alerts', requireAuth, (req, res) => {
 
 app.get('/api/alerts', requireAuth, (req, res) => {
   try {
+    // 예전엔 100개였는데, 수온/pH 쿨다운이 짧았을 때(고쳤음) 하루치
+    // 스팸만으로도 100개가 꽉 차서 과거 기록이 안 보였다. 넉넉하게 늘림.
     const rows = db.prepare(`
       SELECT id, title, time, detail, type
       FROM alerts
       WHERE user_id = ?
       ORDER BY id DESC
-      LIMIT 100
+      LIMIT 500
     `).all(req.session.userId);
 
     return res.json(rows);
@@ -4930,6 +5270,68 @@ app.get('/api/alerts', requireAuth, (req, res) => {
       error: error.message
     });
   }
+});
+
+// ============================================================
+// 알림 테스트 발송 (admin 전용)
+//
+// 실제로는 각 알림마다 지속 조건(3분/30분 등)이나 쿨다운을
+// 기다려야 뜨는데, 개발 중에 알림 파이프라인(생성 → WebSocket
+// → 화면 표시) 전체가 제대로 동작하는지 바로 확인하기 위한
+// 디버그용 엔드포인트. 쿨다운도 건너뛰어서 반복 테스트해도
+// 매번 뜬다. server.cjs에서 실제로 만들어내는 알림 종류와
+// 1:1로 맞춰둔다 — 새 알림 종류를 추가하면 여기도 같이 추가할 것.
+// ============================================================
+
+const DEBUG_ALERT_DEFINITIONS = {
+  'temperature-increase': {
+    title: '수온 상승 경고',
+    detail: '[테스트] 수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도',
+  },
+  'temperature-decrease': {
+    title: '수온 저하 경고',
+    detail: '[테스트] 수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도',
+  },
+  'ph-increase': {
+    title: 'pH 상승 경고',
+    detail: '[테스트] pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7',
+  },
+  'ph-decrease': {
+    title: 'pH 하락 경고',
+    detail: '[테스트] pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7',
+  },
+  'water-decrease': {
+    title: '수위 저하 경고',
+    detail: '[테스트] 수위가 기준보다 낮습니다.',
+  },
+  'fish-flipped-pose': {
+    title: '배뒤집힘 지속 경고',
+    detail: '[테스트] 물고기가 3분 이상 뒤집힌 자세로 감지되고 있습니다.',
+  },
+  'water-quality-warning': {
+    title: '물갈이 권장',
+    detail: '[테스트] 탁도/TDS가 평소보다 크게 벗어난 상태가 계속되고 있습니다. 물갈이를 권장합니다.',
+  },
+};
+
+app.post('/api/debug/trigger-alert', requireAdmin, (req, res) => {
+  const { type } = req.body || {};
+  const definition = DEBUG_ALERT_DEFINITIONS[type];
+
+  if (!definition) {
+    return res.status(400).json({ success: false, error: '지원하지 않는 알림 종류입니다.' });
+  }
+
+  const alert = createAlertIfAllowed({
+    type,
+    title: definition.title,
+    detail: definition.detail,
+    eventTime: new Date().toISOString(),
+    userId: req.session.userId,
+    skipCooldown: true,
+  });
+
+  res.json({ success: true, alert });
 });
 
 

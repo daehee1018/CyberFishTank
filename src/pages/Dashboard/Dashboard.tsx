@@ -35,6 +35,7 @@ const Dashboard: React.FC = () => {
     currentUser,
     tankTheme,
     substrateColor,
+    pollutionPreview,
   } = useAppContext();
 
   // 물리 어항 영상은 admin 소유다. 다른 계정은 본인 카메라를
@@ -65,10 +66,6 @@ const Dashboard: React.FC = () => {
     turbidity: { mean: number; std: number };
     tds: { mean: number; std: number };
   } | null>(null);
-
-  // admin 전용 미리보기: 실제 판정과 무관하게 화면에서만
-  // 오염도 단계를 강제로 바꿔서 물 색 변화를 확인할 수 있게 한다.
-  const [pollutionPreview, setPollutionPreview] = useState<number | null>(null);
 
   useEffect(() => {
     const loadPollutionBaseline = async () => {
@@ -579,52 +576,6 @@ const Dashboard: React.FC = () => {
               {myCameraError}
             </div>
           )}
-
-          {/* ---------------------------------------------
-              오염도 미리보기 (admin 전용)
-
-              실측값을 기다리지 않고도 물 색 변화를 눈으로
-              확인할 수 있게 하는 디버그용 버튼. 화면 표시만
-              바꾸고 실제 판정/DB에는 영향 없음.
-              --------------------------------------------- */}
-
-          {isPhysicalTankOwner && (
-            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-3">
-              <span className="text-xs font-medium text-slate-500">
-                오염도 미리보기
-              </span>
-
-              {[
-                { severity: 0, label: '정상' },
-                { severity: 1, label: '주의' },
-                { severity: 2, label: '위험' },
-              ].map((option) => (
-                <button
-                  key={option.severity}
-                  onClick={() => setPollutionPreview(option.severity)}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                    pollutionPreview === option.severity
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-
-              <button
-                onClick={() => setPollutionPreview(null)}
-                className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                  pollutionPreview === null
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                실측값으로
-              </button>
-            </div>
-          )}
-
 
           {/* =================================================
               어항 화면

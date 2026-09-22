@@ -8,6 +8,35 @@
 	transform: translate(-50%, -100%);
 }
 
+/* ================================
+   Fish2D 몸통 흔들림
+   ================================ */
+
+@keyframes fish2d-swim-wiggle {
+	0% {
+		transform: scale(1, 1) translateY(0);
+	}
+	25% {
+		transform: scale(1.02, 0.985) translateY(-1.5px);
+	}
+	50% {
+		transform: scale(1, 1) translateY(0);
+	}
+	75% {
+		transform: scale(0.985, 1.02) translateY(1.5px);
+	}
+	100% {
+		transform: scale(1, 1) translateY(0);
+	}
+}
+
+.fish2d-swim-wiggle {
+	position: relative;
+	display: inline-block;
+	transform-origin: 50% 50%;
+	animation: fish2d-swim-wiggle 1.6s ease-in-out infinite;
+}
+
 @keyframes aquarium-plant-sway {
 	0%,
 	100% {

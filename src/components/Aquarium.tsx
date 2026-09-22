@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useId } from 'react';
 import Fish from './Fish';
 import type { AquariumDecoration } from '../context/AppContext';
 
@@ -60,6 +60,12 @@ export default function Aquarium({
   substrateColor?: string;
 }) {
   const substrate = SUBSTRATE_PRESETS[substrateColor] ?? SUBSTRATE_PRESETS.natural;
+
+  // 카오틱 광선용 SVG 필터 id. Aquarium이 페이지에 여러 개
+  // 떠 있어도(대시보드 + 설정 미리보기) 겹치지 않게 인스턴스별로
+  // 고유하게 만든다.
+  const causticFilterId =
+    'aquarium-caustic-' + useId().replace(/[^a-zA-Z0-9]/g, '');
 
   const [fish, setFish] = useState({
     id: 1,
@@ -335,24 +341,53 @@ export default function Aquarium({
 
       {/* ================================
           카오틱 광선 (물속에서 흔들리는 빛줄기)
+
+          이전엔 radial-gradient 몇 개를 겹쳐서 만들었는데
+          모양이 너무 규칙적이라 벽지처럼 보였다. 대신 SVG
+          feTurbulence로 실제 노이즈 기반 무늬를 만들고, 그
+          노이즈의 baseFrequency를 SMIL로 천천히 흔들어서
+          유기적으로 일렁이게 한다.
           ================================ */}
 
+      <svg
+        aria-hidden="true"
+        style={{ position: 'absolute', width: 0, height: 0 }}
+      >
+        <filter id={causticFilterId}>
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.02 0.05"
+            numOctaves={2}
+            seed={4}
+            result="noise"
+          >
+            <animate
+              attributeName="baseFrequency"
+              dur="26s"
+              values="0.02 0.05;0.028 0.065;0.02 0.05"
+              repeatCount="indefinite"
+            />
+          </feTurbulence>
+          {/* 임계값을 세게 조여서(20*a-17) 노이즈 대부분은 걸러지고
+              가장 밝은 봉우리만 작은 빛 조각으로 남게 한다. */}
+          <feColorMatrix
+            in="noise"
+            type="matrix"
+            values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 20 -17"
+          />
+        </filter>
+      </svg>
+
       <div
-        className="aquarium-caustics"
         style={{
           position: 'absolute',
           inset: 0,
           zIndex: 1,
-          opacity: 0.4,
+          opacity: 0.35,
           mixBlendMode: 'screen',
           pointerEvents: 'none',
-          filter: 'blur(10px)',
-          backgroundImage:
-            'radial-gradient(ellipse 22% 10% at 18% 12%, rgba(255,255,255,0.6), rgba(255,255,255,0) 70%), ' +
-            'radial-gradient(ellipse 16% 8% at 62% 30%, rgba(255,255,255,0.5), rgba(255,255,255,0) 70%), ' +
-            'radial-gradient(ellipse 20% 9% at 85% 8%, rgba(255,255,255,0.45), rgba(255,255,255,0) 70%), ' +
-            'radial-gradient(ellipse 18% 9% at 38% 55%, rgba(255,255,255,0.4), rgba(255,255,255,0) 70%)',
-          backgroundSize: '200% 200%',
+          backgroundColor: 'white',
+          filter: `url(#${causticFilterId}) blur(3px)`,
         }}
       />
 
@@ -593,6 +628,10 @@ export default function Aquarium({
                 top: `${decoration.y}%`,
                 width: `${decoration.width ?? 22}%`,
                 height: `${decoration.height ?? 22}%`,
+                // 그림자로 바닥에 붙어있는 느낌을 주고, 채도/밝기를
+                // 살짝 낮춰서 물 색조와 좀 더 어우러지게 한다.
+                filter:
+                  'drop-shadow(0 6px 5px rgba(8,25,35,0.28)) saturate(0.9) brightness(0.97)',
               }}
             />
           )

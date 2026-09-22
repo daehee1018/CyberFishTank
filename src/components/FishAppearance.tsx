@@ -32,6 +32,7 @@ export default function FishAppearance() {
     fishColorHue,
     fishAccessory,
     updateFishAppearance,
+    activeGraphicDir,
   } = useAppContext();
 
   const [hue, setHue] = useState(fishColorHue);
@@ -48,8 +49,12 @@ export default function FishAppearance() {
     setAccessory(fishAccessory);
   }, [fishAccessory]);
 
+  // Fish2D/그래픽 갤러리와 같은 규칙: activeGraphicDir이 있으면
+  // 그 버전 폴더를, 없으면 예전 방식(계정 바로 아래)을 본다.
   const previewSrc = currentUser
-    ? `/fish_sprites/${currentUser.id}/fish_right.png`
+    ? activeGraphicDir
+      ? `/fish_sprites/${currentUser.id}/${activeGraphicDir}/fish_right.png`
+      : `/fish_sprites/${currentUser.id}/fish_right.png`
     : '/fish_sprites/fish_right.png';
 
   const previewAccessoryStyle =

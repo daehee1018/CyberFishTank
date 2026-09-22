@@ -52,7 +52,7 @@ export function Fish2D({
   // 선택된 물고기 이미지 갱신용
   // ============================================================
 
-  const { currentUser, fishColorHue, fishAccessory } = useAppContext();
+  const { currentUser, fishColorHue, fishAccessory, activeGraphicDir } = useAppContext();
 
   const [spriteVersion, setSpriteVersion] = useState(
     Date.now()
@@ -64,7 +64,7 @@ export function Fish2D({
 
   useEffect(() => {
     setUseDefaultSprite(false);
-  }, [currentUser?.id, spriteVersion]);
+  }, [currentUser?.id, spriteVersion, activeGraphicDir]);
 
   // ============================================================
   // 물고기 스타일 변경 이벤트 감지
@@ -417,9 +417,17 @@ export function Fish2D({
   // 이미지 URL
   // ============================================================
 
+  // activeGraphicDir이 비어있으면(아직 그래픽을 저장한 적 없는
+  // 예전 계정) 옛날 방식 그대로 fish_sprites/{userId}/ 바로
+  // 아래에서 찾는다.
+  const spriteBasePath =
+    currentUser && activeGraphicDir
+      ? `/fish_sprites/${currentUser.id}/${activeGraphicDir}`
+      : `/fish_sprites/${currentUser?.id}`;
+
   const imageSrc =
     currentUser && !useDefaultSprite
-      ? `/fish_sprites/${currentUser.id}/${imageName}?v=${spriteVersion}`
+      ? `${spriteBasePath}/${imageName}?v=${spriteVersion}`
       : `/fish_sprites/${imageName}?v=${spriteVersion}`;
 
   // ============================================================
@@ -434,7 +442,7 @@ export function Fish2D({
         top: topPosition,
         transform: 'translate(-50%, -50%)',
         transition:
-          'left 0.2s ease-out, top 0.2s ease-out',
+          'left 0.4s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.4s cubic-bezier(0.22, 0.61, 0.36, 1)',
         zIndex: 10,
       }}
     >
@@ -502,7 +510,7 @@ export function Fish2D({
               ? `rotate(${displayDirection.rotation}deg)`
               : 'none',
           transition:
-            'transform 0.15s linear',
+            'transform 0.4s cubic-bezier(0.22, 0.61, 0.36, 1)',
         }}
       >
         {/* 좌우 반전은 이미지와 액세서리가 같이 뒤집혀야 하므로
@@ -517,39 +525,44 @@ export function Fish2D({
                 : 'none',
           }}
         >
-          <img
-            src={imageSrc}
-            onError={() => setUseDefaultSprite(true)}
-            alt="Fish"
-            style={{
-              width: '120px',
-              height: 'auto',
-              objectFit: 'contain',
-              display: 'block',
-
-              filter: abnormal
-                ? 'drop-shadow(0 0 15px red) sepia(1) hue-rotate(-50deg) saturate(3)'
-                : `hue-rotate(${fishColorHue}deg) drop-shadow(0 4px 6px rgba(15,23,42,0.3))`,
-            }}
-          />
-
-          {/* 액세서리 */}
-          {fishAccessory && ACCESSORY_STYLE[fishAccessory] && (
-            <span
+          {/* 몸통 흔들림: 위치/방향 추적과 별개로 항상 도는 애니메이션.
+              가만히 트래킹만 따라가면 미끄러지듯 딱딱해 보여서,
+              헤엄치는 느낌을 얹는다. */}
+          <div className="fish2d-swim-wiggle">
+            <img
+              src={imageSrc}
+              onError={() => setUseDefaultSprite(true)}
+              alt="Fish"
               style={{
-                position: 'absolute',
-                left: ACCESSORY_STYLE[fishAccessory].left,
-                top: ACCESSORY_STYLE[fishAccessory].top,
-                transform: 'translate(-50%, -50%)',
-                fontSize: ACCESSORY_STYLE[fishAccessory].fontSize,
-                lineHeight: 1,
-                pointerEvents: 'none',
-                filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.35))',
+                width: '120px',
+                height: 'auto',
+                objectFit: 'contain',
+                display: 'block',
+
+                filter: abnormal
+                  ? 'drop-shadow(0 0 15px red) sepia(1) hue-rotate(-50deg) saturate(3)'
+                  : `hue-rotate(${fishColorHue}deg) drop-shadow(0 4px 6px rgba(15,23,42,0.3))`,
               }}
-            >
-              {ACCESSORY_STYLE[fishAccessory].emoji}
-            </span>
-          )}
+            />
+
+            {/* 액세서리 */}
+            {fishAccessory && ACCESSORY_STYLE[fishAccessory] && (
+              <span
+                style={{
+                  position: 'absolute',
+                  left: ACCESSORY_STYLE[fishAccessory].left,
+                  top: ACCESSORY_STYLE[fishAccessory].top,
+                  transform: 'translate(-50%, -50%)',
+                  fontSize: ACCESSORY_STYLE[fishAccessory].fontSize,
+                  lineHeight: 1,
+                  pointerEvents: 'none',
+                  filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.35))',
+                }}
+              >
+                {ACCESSORY_STYLE[fishAccessory].emoji}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

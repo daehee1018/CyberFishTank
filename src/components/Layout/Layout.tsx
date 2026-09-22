@@ -16,6 +16,9 @@ const Layout: React.FC = () => {
     { name: '기록', path: '/records' },
     { name: '개인 설정', path: '/personal-settings' },
     { name: '설정', path: '/settings' },
+    ...(currentUser?.role === 'admin'
+      ? [{ name: '테스트', path: '/admin-test' }]
+      : []),
   ];
 
   return (
@@ -57,7 +60,11 @@ const Layout: React.FC = () => {
             </div>
           </header>
 
-          <nav className="mt-4 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2 sm:grid-cols-4 sm:gap-4 sm:rounded-[20px] sm:p-3">
+          <nav
+            className={`mt-4 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2 sm:gap-4 sm:rounded-[20px] sm:p-3 ${
+              topMenus.length > 4 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'
+            }`}
+          >
             {topMenus.map((menu) => (
               <NavLink
                 key={menu.name}
