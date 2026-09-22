@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
 
@@ -27,14 +27,9 @@ const FishSelect: React.FC = () => {
 
   const hasExistingFish = Boolean(fishSpecies);
 
-  // 일시적인 오류 등으로 이미 물고기가 있는 계정이 이 화면으로
-  // 잘못 온 경우, 수동으로 "돌아가기"를 누르지 않아도 되게
-  // 자동으로 대시보드로 돌려보낸다.
-  useEffect(() => {
-    if (hasExistingFish) {
-      navigate('/', { replace: true });
-    }
-  }, [hasExistingFish, navigate]);
+  // 자동으로 돌려보내지 않는다 — 설정 페이지에서 "물고기 다시
+  // 선택"으로 일부러 여기 올 수도 있어서, 이미 물고기가 있어도
+  // 화면은 그대로 보여주고 "돌아가기" 링크로만 나가게 한다.
 
   const handleSelect = async (species: SpeciesOption) => {
     if (!species.available) {

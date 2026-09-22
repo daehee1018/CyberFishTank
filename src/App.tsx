@@ -8,6 +8,7 @@ import PersonalSettings from './pages/PersonalSettings/PersonalSettings';
 import Login from './pages/Login/Login';
 import Signup from './pages/Login/Signup';
 import FishSelect from './pages/FishSelect/FishSelect';
+import CameraSetup from './pages/CameraSetup/CameraSetup';
 import { useAppContext } from './context/AppContext';
 
 function RequireAuth() {
@@ -39,6 +40,17 @@ function RequireAuth() {
     return <Navigate to="/select-fish" replace />;
   }
 
+  // admin(물리 어항 소유자)을 제외하고, 카메라 연결을 아직 안 한
+  // 계정은 연결 화면으로 강제 이동. 물고기 선택보다 뒤 순서.
+  if (
+    currentUser.role !== 'admin' &&
+    !currentUser.cameraConfigured &&
+    location.pathname !== '/setup-camera' &&
+    location.pathname !== '/select-fish'
+  ) {
+    return <Navigate to="/setup-camera" replace />;
+  }
+
   return <Outlet />;
 }
 
@@ -53,6 +65,8 @@ export default function App() {
         <Route element={<RequireAuth />}>
 
           <Route path="/select-fish" element={<FishSelect />} />
+
+          <Route path="/setup-camera" element={<CameraSetup />} />
 
           <Route path="/" element={<Layout />}>
 

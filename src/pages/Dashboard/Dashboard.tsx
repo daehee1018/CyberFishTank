@@ -30,8 +30,15 @@ const Dashboard: React.FC = () => {
     fishData,
     aquariumDecorations,
     displaySensorData,
+    adminLiveFrame,
     controlNotice,
+    currentUser,
   } = useAppContext();
+
+  // 물리 어항 영상은 admin 소유다. 다른 계정은 본인 카메라를
+  // 켰을 때만 자기 영상을 보고, 안 켰으면 admin 영상이 새어
+  // 보이면 안 된다.
+  const isPhysicalTankOwner = currentUser?.role === 'admin';
 
   // ====================================================
   // 내 카메라 연동
@@ -364,7 +371,9 @@ const Dashboard: React.FC = () => {
               <div className="text-2xl font-semibold tracking-tight text-slate-900">
 
                 {
-                  useMyCamera
+                  useMyCamera && isLiveMode
+                    ? '내 카메라 실시간 화면'
+                    : useMyCamera
                     ? '내 카메라로 실시간 추적 중'
                     : isLiveMode
                     ? '실시간 하드웨어 피드 스트리밍'
@@ -378,36 +387,34 @@ const Dashboard: React.FC = () => {
 
             <div className="flex flex-wrap items-center gap-2">
 
-              {!useMyCamera && (
-                <button
-                  onClick={() =>
-                    setIsLiveMode(
-                      !isLiveMode
-                    )
-                  }
-                  className="
-                    rounded-full
-                    border
-                    border-slate-200
-                    bg-slate-50
-                    px-4
-                    py-2
-                    text-sm
-                    font-medium
-                    text-slate-600
-                    transition
-                    hover:bg-slate-100
-                  "
-                >
+              <button
+                onClick={() =>
+                  setIsLiveMode(
+                    !isLiveMode
+                  )
+                }
+                className="
+                  rounded-full
+                  border
+                  border-slate-200
+                  bg-slate-50
+                  px-4
+                  py-2
+                  text-sm
+                  font-medium
+                  text-slate-600
+                  transition
+                  hover:bg-slate-100
+                "
+              >
 
-                  {
-                    isLiveMode
-                      ? 'Digital Twin'
-                      : 'Live Render'
-                  }
+                {
+                  isLiveMode
+                    ? 'Digital Twin'
+                    : 'Live Render'
+                }
 
-                </button>
-              )}
+              </button>
 
               {!useMyCamera && availableCameras.length > 1 && (
                 <select
@@ -461,24 +468,10 @@ const Dashboard: React.FC = () => {
           ">
 
             {/* ---------------------------------------------
-                실제 카메라 화면
+                배경 (Live Render는 아래 video가 대신 채움)
                 --------------------------------------------- */}
 
-            {isLiveMode && !useMyCamera ? (
-
-              <img
-                src="http://192.168.31.151:5000/video_feed"
-                className="
-                  absolute
-                  inset-0
-                  h-full
-                  w-full
-                  object-cover
-                "
-                alt="실시간 어항 카메라"
-              />
-
-            ) : (
+            {!isLiveMode ? (
 
               /* -------------------------------------------
                  디지털 트윈
@@ -503,12 +496,54 @@ const Dashboard: React.FC = () => {
 
               </div>
 
-            )}
+            ) : !useMyCamera && isPhysicalTankOwner ? (
 
-            {useMyCamera && (
-              <div className="absolute right-3 top-3 z-10 h-24 w-32 overflow-hidden rounded-[10px] border border-white/70 shadow-lg">
-                <video ref={myVideoRef} className="h-full w-full object-cover" muted playsInline />
+              adminLiveFrame ? (
+
+                <img
+                  src={adminLiveFrame}
+                  className="
+                    absolute
+                    inset-0
+                    h-full
+                    w-full
+                    object-cover
+                  "
+                  alt="실시간 어항 카메라"
+                />
+
+              ) : (
+
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">
+                  실시간 화면을 기다리는 중...
+                </div>
+
+              )
+
+            ) : !useMyCamera ? (
+
+              /* admin이 아닌 계정은 본인 카메라를 안 켰으면
+                 admin의 물리 어항 영상이 보이면 안 된다. */
+
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center text-sm text-slate-400">
+                <div>실시간 화면을 보려면 내 카메라를 먼저 켜주세요.</div>
               </div>
+
+            ) : null}
+
+            {/* 내 카메라 영상. 프레임 캡처가 끊기지 않도록 라이브/트윈
+                모드와 상관없이 항상 마운트해두고, 크기만 바꾼다. */}
+            {useMyCamera && (
+              <video
+                ref={myVideoRef}
+                muted
+                playsInline
+                className={
+                  isLiveMode
+                    ? 'absolute inset-0 z-0 h-full w-full object-cover'
+                    : 'absolute right-3 top-3 z-10 h-24 w-32 overflow-hidden rounded-[10px] border border-white/70 object-cover shadow-lg'
+                }
+              />
             )}
             <canvas ref={myCaptureCanvasRef} className="hidden" />
 

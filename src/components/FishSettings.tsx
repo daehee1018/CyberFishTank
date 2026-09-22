@@ -53,6 +53,7 @@ export default function FishSettings() {
         {
           method: 'POST',
           body: formData,
+          credentials: 'include',
         }
       );
 
@@ -127,6 +128,8 @@ export default function FishSettings() {
         '/api/select-style',
         {
           method: 'POST',
+
+          credentials: 'include',
 
           headers: {
             'Content-Type': 'application/json',

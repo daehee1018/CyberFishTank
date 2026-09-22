@@ -153,6 +153,7 @@ export interface AuthUser {
   id: number;
   username: string;
   role: 'admin' | 'user';
+  cameraConfigured: boolean;
 }
 
 // ======================================================
@@ -203,6 +204,8 @@ interface AppContextType {
     species: string,
     name: string
   ) => Promise<{ success: boolean; error?: string }>;
+
+  confirmCameraSetup: () => Promise<{ success: boolean; error?: string }>;
 
   notificationsEnabled: boolean;
   setNotificationsEnabled: (val: boolean) => void;
@@ -305,6 +308,8 @@ interface AppContextType {
 
   displaySensorData: DisplaySensorData | null;
 
+  adminLiveFrame: string | null;
+
   sensorHistory: DisplaySensorData[];
 
   hourlyAverage: HourlyAverage | null;
@@ -358,6 +363,7 @@ export const AppProvider: React.FC<{
       try {
         const response = await fetch(`${API_BASE}/api/me`, {
           credentials: 'include',
+          cache: 'no-store',
         });
 
         if (!response.ok) {
@@ -447,8 +453,20 @@ export const AppProvider: React.FC<{
   // ====================================================
 
   useEffect(() => {
+    // 로그인 확인이 아직 안 끝났으면 판단을 미룬다. currentUser가
+    // null → 유저 객체로 바뀌는 렌더와 이 effect가 재실행되는 렌더
+    // 사이에 한 틱의 간격이 있는데, 그 틈에 fishLoading이 (로그인
+    // 전 기본값인) false로 남아있으면 라우터가 "물고기 없음"으로
+    // 오판해서 이미 물고기를 고른 계정도 선택 화면으로 잘못
+    // 튕겨나간다.
+    if (authLoading) {
+      return;
+    }
+
     if (!currentUser) {
       setFishLoading(false);
+      setFishSpecies(null);
+      setFishName('');
       return;
     }
 
@@ -464,6 +482,7 @@ export const AppProvider: React.FC<{
         try {
           const response = await fetch(`${API_BASE}/api/fish`, {
             credentials: 'include',
+            cache: 'no-store',
           });
 
           if (!response.ok) {
@@ -497,7 +516,7 @@ export const AppProvider: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [currentUser]);
+  }, [currentUser, authLoading]);
 
   const updateFish = async (species: string, name: string) => {
     try {
@@ -519,6 +538,32 @@ export const AppProvider: React.FC<{
       return { success: true };
     } catch (error) {
       console.error('❌ 물고기 정보 저장 실패:', error);
+      return { success: false, error: '서버에 연결할 수 없습니다.' };
+    }
+  };
+
+  // 카메라 연결(필수 단계) 완료 표시.
+  // 성공하면 currentUser도 즉시 갱신해서 재로그인 없이 바로 반영되게 한다.
+  const confirmCameraSetup = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/camera/confirm-setup`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || '카메라 연결 확인에 실패했습니다.' };
+      }
+
+      setCurrentUser((prev) =>
+        prev ? { ...prev, cameraConfigured: true } : prev
+      );
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ 카메라 연결 확인 실패:', error);
       return { success: false, error: '서버에 연결할 수 없습니다.' };
     }
   };
@@ -777,6 +822,8 @@ export const AppProvider: React.FC<{
           {
             method: 'POST',
 
+            credentials: 'include',
+
             headers: {
               'Content-Type':
                 'application/json',
@@ -904,7 +951,8 @@ export const AppProvider: React.FC<{
 
         const response =
           await fetch(
-            `${API_URL}/api/alerts`
+            `${API_URL}/api/alerts`,
+            { credentials: 'include' }
           );
 
         if (!response.ok) {
@@ -1038,6 +1086,42 @@ export const AppProvider: React.FC<{
     hydrateLatestSensorData();
   }, [currentUser]);
 
+  // ====================================================
+  // Live Render (admin 물리 어항 원본 영상)
+  // ====================================================
+
+  const [adminLiveFrame, setAdminLiveFrame] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    const hydrateLiveFrame = async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/live-camera-frame`,
+          { credentials: 'include' }
+        );
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data?.image) {
+          setAdminLiveFrame(data.image);
+        }
+      } catch (error) {
+        console.error('❌ 초기 Live 프레임 조회 실패:', error);
+      }
+    };
+
+    hydrateLiveFrame();
+  }, [currentUser]);
+
   const [hourlyAverages, setHourlyAverages] =
     useState<HourlyAverage[]>([]);
 
@@ -1114,6 +1198,24 @@ export const AppProvider: React.FC<{
 
         const data =
           JSON.parse(event.data);
+
+        // =================================================
+        // 0. Live Render 원본 프레임 확인
+        // =================================================
+
+        if (data.type === 'live_frame') {
+
+          if (
+            data.owner_user_id !== undefined &&
+            data.owner_user_id !== currentUserIdRef.current
+          ) {
+            return;
+          }
+
+          setAdminLiveFrame(data.image);
+
+          return;
+        }
 
         // =================================================
         // 1. 알람 데이터 확인
@@ -1889,6 +1991,7 @@ export const AppProvider: React.FC<{
     fishSpecies,
     fishLoading,
     updateFish,
+    confirmCameraSetup,
 
     notificationsEnabled,
     setNotificationsEnabled,
@@ -1981,6 +2084,8 @@ export const AppProvider: React.FC<{
     sensorData,
 
     displaySensorData,
+
+    adminLiveFrame,
 
     sensorHistory,
 

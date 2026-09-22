@@ -44,6 +44,14 @@ app.use(cors({
 // 기본 100kb로는 웹캠 프레임(base64 JPEG)을 못 받아서 늘려둔다.
 app.use(express.json({ limit: '10mb' }));
 
+// /api/*는 항상 최신 상태를 반영해야 한다 (로그인/물고기/카메라
+// 설정 여부로 라우팅을 결정하는데, 브라우저가 오래된 응답을
+// 캐시해서 보여주면 가입 직후 상태에 갇히는 버그가 생겼었다).
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 // ============================================================
 // 로그인 세션
 // ============================================================
@@ -141,12 +149,30 @@ try {
   // 이미 있으면 예외. 정상 상황.
 }
 
+// 물고기 선택처럼 카메라 연결도 필수 단계로 만들기 위한 플래그.
+// admin(물리 어항 소유자)은 대상이 아니라 항상 완료 취급한다.
+try {
+  authDb.prepare('ALTER TABLE users ADD COLUMN camera_configured INTEGER DEFAULT 0').run();
+  console.log('✅ users.camera_configured 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+try {
+  authDb.prepare(`UPDATE users SET camera_configured = 1 WHERE role = 'admin'`).run();
+} catch (error) {
+  console.error('❌ admin camera_configured 백필 오류:', error);
+}
+
 const getUserByUsernameStmt = authDb.prepare(`
-  SELECT id, username, password_hash, role FROM users WHERE username = ?
+  SELECT id, username, password_hash, role, camera_configured FROM users WHERE username = ?
 `);
 
 const getUserByIdStmt = authDb.prepare(`
-  SELECT id, username, role FROM users WHERE id = ?
+  SELECT id, username, role, camera_configured FROM users WHERE id = ?
+`);
+
+const setCameraConfiguredStmt = authDb.prepare(`
+  UPDATE users SET camera_configured = 1 WHERE id = ?
 `);
 
 const getUserBySensorKeyStmt = authDb.prepare(`
@@ -280,6 +306,10 @@ ensureAdminHasFishDefault();
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) {
+    // 임시 진단 로그. 원인 찾히면 제거할 것.
+    console.log(
+      `🔍 [AUTH FAIL] ${req.method} ${req.originalUrl} | cookie-header=${req.headers.cookie ? 'O' : 'X'} | sessionID=${req.sessionID} | UA=${(req.headers['user-agent'] || '').slice(0, 60)}`
+    );
     return res.status(401).json({ success: false, error: '로그인이 필요합니다.' });
   }
   next();
@@ -336,7 +366,12 @@ app.post('/api/login', (req, res) => {
 
   res.json({
     success: true,
-    user: { id: user.id, username: user.username, role: user.role },
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      cameraConfigured: Boolean(user.camera_configured),
+    },
   });
 });
 
@@ -370,7 +405,7 @@ app.post('/api/signup', (req, res) => {
 
   res.json({
     success: true,
-    user: { id: userId, username, role: 'user' },
+    user: { id: userId, username, role: 'user', cameraConfigured: false },
   });
 });
 
@@ -393,7 +428,15 @@ app.get('/api/me', (req, res) => {
     return res.status(401).json({ success: false, error: '로그인이 필요합니다.' });
   }
 
-  res.json({ success: true, user });
+  res.json({
+    success: true,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      cameraConfigured: Boolean(user.camera_configured),
+    },
+  });
 });
 
 // ============================================================
@@ -539,6 +582,19 @@ app.post('/api/camera/frame', requireAuth, async (req, res) => {
   }
 
   res.json(result);
+});
+
+// ============================================================
+// 카메라 연결 완료 표시
+//
+// 물고기 선택처럼 카메라 연결도 필수 단계다. 브라우저에서
+// getUserMedia로 실제 카메라 권한을 받은 뒤 이 엔드포인트를
+// 호출하면, 이후로는 /select-fish처럼 이 단계를 다시 안 거친다.
+// ============================================================
+
+app.post('/api/camera/confirm-setup', requireAuth, (req, res) => {
+  setCameraConfiguredStmt.run(req.session.userId);
+  res.json({ success: true });
 });
 
 // ============================================================
@@ -4646,6 +4702,54 @@ app.get('/api/alerts', requireAuth, (req, res) => {
   }
 });
 
+
+// ============================================================
+// 물리 어항 Live Render용 원본 프레임
+//
+// admin의 추적 스크립트(fish_growth_v3_daily_mad_db_catchup.py)가
+// 주기적으로 현재 화면을 보내면 저장해뒀다가, 대시보드
+// "Live Render"가 그걸 보여준다. 좌표 전송(/posi)과는 완전히
+// 별개 파이프라인이라 서로 영향을 주지 않는다.
+// ============================================================
+
+let latestLiveCameraFrame = null; // { image, timestamp }
+
+app.post('/api/live-camera-frame', (req, res) => {
+  const { image } = req.body || {};
+
+  if (!image) {
+    return res.status(400).json({ success: false, error: '이미지가 없습니다.' });
+  }
+
+  latestLiveCameraFrame = {
+    image,
+    timestamp: Date.now(),
+  };
+
+  const owner = getUserByUsernameStmt.get(process.env.ADMIN_USERNAME || 'admin');
+
+  const message = JSON.stringify({
+    type: 'live_frame',
+    owner_user_id: owner ? owner.id : null,
+    image,
+  });
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+
+  res.json({ success: true });
+});
+
+app.get('/api/live-camera-frame', requireAuth, (req, res) => {
+  res.json({
+    success: true,
+    image: latestLiveCameraFrame ? latestLiveCameraFrame.image : null,
+    timestamp: latestLiveCameraFrame ? latestLiveCameraFrame.timestamp : null,
+  });
+});
 
 // ============================================================
 // YOLO 데이터 수신

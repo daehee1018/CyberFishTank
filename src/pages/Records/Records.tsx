@@ -6,6 +6,10 @@ import React, {
 } from 'react';
 import { useAppContext } from '../../context/AppContext';
 
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  'https://ggnu.site';
+
 interface DbSensorData {
   id?: number;
   temperature?: number | null;
@@ -276,9 +280,10 @@ const Records: React.FC = () => {
 
           const response =
             await fetch(
-              '/api/sensor-data',
+              `${API_BASE}/api/sensor-data`,
               {
                 cache: 'no-store',
+                credentials: 'include',
               }
             );
 
@@ -410,9 +415,10 @@ const Records: React.FC = () => {
 
           const response =
             await fetch(
-              '/api/growth/daily',
+              `${API_BASE}/api/growth/daily`,
               {
                 cache: 'no-store',
+                credentials: 'include',
               }
             );
 
@@ -544,9 +550,10 @@ const Records: React.FC = () => {
 
           const response =
             await fetch(
-              '/api/activity/daily',
+              `${API_BASE}/api/activity/daily`,
               {
                 cache: 'no-store',
+                credentials: 'include',
               }
             );
 
