@@ -383,8 +383,8 @@ const PersonalSettings: React.FC = () => {
   };
 
   return (
-    <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-4">
-      <aside className="rounded-[20px] border border-slate-200 bg-white p-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="hidden rounded-[20px] border border-slate-200 bg-white p-4 sm:block">
         <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
           <div className="mb-3 text-sm font-semibold text-slate-500">개인 설정</div>
           <div className="space-y-3">
@@ -397,7 +397,7 @@ const PersonalSettings: React.FC = () => {
         <section>
           <div className="mb-4">
             <div className="text-sm text-slate-500">디지털 트윈 개인 설정</div>
-            <div className="text-2xl font-semibold tracking-tight text-slate-900">물고기 그래픽 생성</div>
+            <div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">물고기 그래픽 생성</div>
           </div>
           <FishSettings />
         </section>
@@ -407,7 +407,7 @@ const PersonalSettings: React.FC = () => {
         <section className="rounded-[20px] border border-slate-200 bg-white p-5">
           <div className="mb-4">
             <div className="text-sm text-slate-500">어항 개인 설정</div>
-            <div className="text-2xl font-semibold tracking-tight text-slate-900">어항 커스터마이징</div>
+            <div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">어항 커스터마이징</div>
             <div className="mt-2 text-sm leading-6 text-slate-600">어항 안의 요소를 직접 드래그하고 크기를 조절합니다.</div>
           </div>
 
@@ -421,7 +421,7 @@ const PersonalSettings: React.FC = () => {
               onPointerMove={handlePreviewPointerDown}
               onPointerUp={stopDragging}
               onPointerLeave={stopDragging}
-              className="relative h-[420px] touch-none overflow-hidden rounded-[16px] border border-slate-200 bg-sky-100"
+              className="relative h-[280px] touch-none overflow-hidden rounded-[16px] border border-slate-200 bg-sky-100 sm:h-[420px]"
             >
               <Aquarium showFish={false} theme={tankTheme} substrateColor={substrateColor} />
               <div className="absolute inset-0 z-10">
@@ -526,7 +526,7 @@ const PersonalSettings: React.FC = () => {
 
         <section className="rounded-[20px] border border-slate-200 bg-white p-5">
           <div className="text-sm text-slate-500">개인 설정</div>
-          <div className="text-2xl font-semibold tracking-tight text-slate-900">
+          <div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">
             내 센서 연동
           </div>
           <p className="mt-2 text-sm text-slate-500">

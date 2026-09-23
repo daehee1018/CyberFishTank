@@ -131,8 +131,8 @@ const Settings: React.FC = () => {
   );
 
   return (
-    <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-4">
-      <aside className="rounded-[20px] border border-slate-200 bg-white p-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="hidden rounded-[20px] border border-slate-200 bg-white p-4 sm:block">
         <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
           <div className="mb-3 text-sm font-semibold text-slate-500">설정 메뉴</div>
           <div className="space-y-3">
@@ -146,7 +146,7 @@ const Settings: React.FC = () => {
       <div className="space-y-4">
         {controlNotice && <div className="rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{controlNotice}</div>}
         <section className="rounded-[20px] border border-slate-200 bg-white p-5">
-          <div className="mb-4"><div className="text-sm text-slate-500">어항 설정</div><div className="text-2xl font-semibold tracking-tight text-slate-900">어항 및 물고기 정보</div></div>
+          <div className="mb-4"><div className="text-sm text-slate-500">어항 설정</div><div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">어항 및 물고기 정보</div></div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="rounded-[16px] border border-slate-200 bg-slate-50 p-5 text-sm font-medium text-slate-600">어항 이름<input value={tankName} onChange={(event) => setTankName(event.target.value)} className="mt-3 w-full rounded-[12px] border border-slate-200 bg-white px-4 py-3 text-sm outline-none" /></label>
             <label className="rounded-[16px] border border-slate-200 bg-slate-50 p-5 text-sm font-medium text-slate-600">
@@ -172,7 +172,7 @@ const Settings: React.FC = () => {
         </section>
 
         <section className="rounded-[20px] border border-slate-200 bg-white p-5">
-          <div className="mb-4"><div className="text-sm text-slate-500">사용자 설정</div><div className="text-2xl font-semibold tracking-tight text-slate-900">계정 및 환경 설정</div></div>
+          <div className="mb-4"><div className="text-sm text-slate-500">사용자 설정</div><div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">계정 및 환경 설정</div></div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="rounded-[16px] border border-slate-200 bg-slate-50 p-5 text-sm font-medium text-slate-600">계정 이메일<input value={accountEmail} onChange={(event) => setAccountEmail(event.target.value)} className="mt-3 w-full rounded-[12px] border border-slate-200 bg-white px-4 py-3 text-sm outline-none" /></label>
             <label className="rounded-[16px] border border-slate-200 bg-slate-50 p-5 text-sm font-medium text-slate-600">계정 보안 PIN<input value={controlPin} onChange={(event) => setControlPin(event.target.value)} className="mt-3 w-full rounded-[12px] border border-slate-200 bg-white px-4 py-3 text-sm outline-none" /></label>
@@ -189,7 +189,7 @@ const Settings: React.FC = () => {
           <section className="rounded-[20px] border border-slate-200 bg-white p-5">
             <div className="mb-4">
               <div className="text-sm text-slate-500">보안 설정</div>
-              <div className="text-2xl font-semibold tracking-tight text-slate-900">계정 관리</div>
+              <div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">계정 관리</div>
             </div>
 
             {userError && (

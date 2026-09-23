@@ -417,11 +417,11 @@ const Dashboard: React.FC = () => {
           왼쪽 빠른 제어
           ================================================== */}
 
-      <aside className="rounded-[20px] border border-slate-200 bg-white p-4">
+      <aside className="order-2 rounded-[20px] border border-slate-200 bg-white p-4 sm:order-none">
 
         <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
 
-          <div className="space-y-4">
+          <div className="flex gap-3 overflow-x-auto sm:block sm:space-y-4 sm:overflow-visible">
 
             {quickControls.map(
               (item) => (
@@ -430,6 +430,8 @@ const Dashboard: React.FC = () => {
                   key={item.label}
                   className="
                     w-full
+                    flex-shrink-0
+                    basis-[45%]
                     rounded-[14px]
                     border
                     border-slate-200
@@ -440,6 +442,7 @@ const Dashboard: React.FC = () => {
                     transition
                     hover:border-slate-300
                     hover:bg-slate-50
+                    sm:basis-auto
                   "
                 >
 
@@ -479,21 +482,21 @@ const Dashboard: React.FC = () => {
             디지털 트윈
             ================================================= */}
 
-        <div className="relative overflow-hidden rounded-[20px] border border-slate-200 bg-white p-5">
+        <div className="relative overflow-hidden rounded-[20px] border border-slate-200 bg-white p-3 sm:p-5">
 
           {/* ---------------------------------------------
               제목
               --------------------------------------------- */}
 
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between gap-2 sm:mb-4">
 
-            <div>
+            <div className="min-w-0">
 
-              <div className="text-sm text-slate-500">
+              <div className="text-xs text-slate-500 sm:text-sm">
                 실시간 디지털 트윈
               </div>
 
-              <div className="text-2xl font-semibold tracking-tight text-slate-900">
+              <div className="truncate text-base font-semibold tracking-tight text-slate-900 sm:text-2xl">
 
                 {
                   useMyCamera && isLiveMode
@@ -510,7 +513,7 @@ const Dashboard: React.FC = () => {
             </div>
 
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-shrink-0 items-center gap-1.5 sm:flex-wrap sm:gap-2">
 
               <button
                 onClick={() =>
@@ -523,13 +526,16 @@ const Dashboard: React.FC = () => {
                   border
                   border-slate-200
                   bg-slate-50
-                  px-4
-                  py-2
-                  text-sm
+                  px-2.5
+                  py-1.5
+                  text-xs
                   font-medium
                   text-slate-600
                   transition
                   hover:bg-slate-100
+                  sm:px-4
+                  sm:py-2
+                  sm:text-sm
                 "
               >
 
@@ -545,7 +551,7 @@ const Dashboard: React.FC = () => {
                 <select
                   value={selectedCameraId}
                   onChange={(event) => setSelectedCameraId(event.target.value)}
-                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600"
+                  className="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 sm:block"
                 >
                   <option value="">기본 카메라</option>
                   {availableCameras.map((camera, index) => (
@@ -558,13 +564,13 @@ const Dashboard: React.FC = () => {
 
               <button
                 onClick={useMyCamera ? stopMyCamera : startMyCamera}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                className={`rounded-full border px-2.5 py-1.5 text-xs font-medium transition sm:px-4 sm:py-2 sm:text-sm ${
                   useMyCamera
                     ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
                     : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                {useMyCamera ? '내 카메라 끄기' : '내 카메라 켜기'}
+                {useMyCamera ? '카메라 끄기' : '카메라 켜기'}
               </button>
 
             </div>
@@ -583,12 +589,13 @@ const Dashboard: React.FC = () => {
 
           <div className="
             relative
-            h-[510px]
+            h-[320px]
             overflow-hidden
             rounded-[18px]
             border
             border-slate-200
             bg-white
+            sm:h-[510px]
           ">
 
             {/* ---------------------------------------------
