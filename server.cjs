@@ -4424,25 +4424,149 @@ function processStoredSensorAlerts() {
 // 센서 데이터는 WebSocket으로 보내지 않음
 // ============================================================
 
-app.post("/api/feed", async (req, res) => {
-    try {
-        console.log("[FEED] 먹이 급여 명령 요청");
+// ============================================================
+// 자동 급식기: 웹은 큐를 관리하고, Python bridge가 센서 키로
+// 명령을 하나씩 가져간다. RP2040의 결과만 최종 상태로 기록한다.
+// ============================================================
+authDb.prepare(`
+  CREATE TABLE IF NOT EXISTS feeder_status (
+    user_id INTEGER PRIMARY KEY,
+    feed_count INTEGER NOT NULL DEFAULT 0 CHECK (feed_count >= 0 AND feed_count <= 1),
+    angle INTEGER NOT NULL DEFAULT 0,
+    locked INTEGER NOT NULL DEFAULT 0,
+    last_seen TEXT,
+    last_command TEXT,
+    last_command_status TEXT,
+    updated_at TEXT NOT NULL
+  )
+`).run();
+authDb.prepare(`
+  CREATE TABLE IF NOT EXISTS feeder_commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    command TEXT NOT NULL CHECK (command IN ('FEED', 'RESET')),
+    status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
+    created_at TEXT NOT NULL,
+    claimed_at TEXT,
+    completed_at TEXT,
+    result_message TEXT
+  )
+`).run();
+authDb.prepare('CREATE INDEX IF NOT EXISTS idx_feeder_commands_next ON feeder_commands(user_id, status, id)').run();
 
-        // TODO: Raspberry Pi에 모터 작동 명령 전달
+const ensureFeederStatusStmt = authDb.prepare(`
+  INSERT INTO feeder_status (user_id, updated_at) VALUES (?, ?)
+  ON CONFLICT(user_id) DO NOTHING
+`);
+const getFeederStatusStmt = authDb.prepare('SELECT * FROM feeder_status WHERE user_id = ?');
+const getPendingFeederCommandStmt = authDb.prepare(`
+  SELECT id, command, status FROM feeder_commands
+  WHERE user_id = ? AND status IN ('queued', 'processing') ORDER BY id ASC LIMIT 1
+`);
+const insertFeederCommandStmt = authDb.prepare(`
+  INSERT INTO feeder_commands (user_id, command, status, created_at) VALUES (?, ?, 'queued', ?)
+`);
 
-        res.json({
-            success: true,
-            message: "먹이 급여 명령을 전송했습니다."
-        });
+function feederStatusPayload(userId) {
+  ensureFeederStatusStmt.run(userId, new Date().toISOString());
+  const status = getFeederStatusStmt.get(userId);
+  const lastSeenMs = status.last_seen ? Date.parse(status.last_seen) : 0;
+  return {
+    feed_count: status.feed_count,
+    angle: status.angle,
+    locked: Boolean(status.locked),
+    online: Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs <= 15_000,
+    last_seen: status.last_seen,
+    last_command: status.last_command,
+    last_command_status: status.last_command_status,
+  };
+}
 
-    } catch (error) {
-        console.error("[FEED] 먹이 급여 실패:", error);
+function queueFeederCommand(req, res, command) {
+  const userId = req.session.userId;
+  const current = feederStatusPayload(userId);
+  const pending = getPendingFeederCommandStmt.get(userId);
+  if (pending) {
+    return res.status(409).json({ success: false, error: '이미 처리 중인 급식기 명령이 있습니다.', command: pending });
+  }
+  // 하루 1회 급여 제한. 펌웨어 잠금 상태와 무관하게 서버에서도 추가 급여를 막는다.
+  if (command === 'FEED' && (current.locked || current.feed_count >= 1)) {
+    return res.status(409).json({ success: false, error: '오늘의 급여가 완료되었습니다. 초기화 후 다시 시도해주세요.' });
+  }
+  const now = new Date().toISOString();
+  const result = insertFeederCommandStmt.run(userId, command, now);
+  authDb.prepare(`UPDATE feeder_status SET last_command = ?, last_command_status = 'queued', updated_at = ? WHERE user_id = ?`)
+    .run(command, now, userId);
+  res.status(202).json({ success: true, command: { id: Number(result.lastInsertRowid), command, status: 'queued' } });
+}
 
-        res.status(500).json({
-            success: false,
-            message: "먹이 급여에 실패했습니다."
-        });
+app.post('/api/feeder/feed', requireAuth, (req, res) => queueFeederCommand(req, res, 'FEED'));
+app.post('/api/feeder/reset', requireAuth, (req, res) => queueFeederCommand(req, res, 'RESET'));
+app.get('/api/feeder/status', requireAuth, (req, res) => {
+  res.json({ success: true, ...feederStatusPayload(req.session.userId) });
+});
+
+// queued 명령을 processing으로 원자적으로 claim하여 polling 중 중복 실행을 막는다.
+app.get('/api/feeder/command', requireSensorKey, (req, res) => {
+  const userId = req.sensorUserId;
+  const now = new Date().toISOString();
+  ensureFeederStatusStmt.run(userId, now);
+  authDb.prepare('UPDATE feeder_status SET last_seen = ?, updated_at = ? WHERE user_id = ?').run(now, now, userId);
+  const claim = authDb.transaction(() => {
+    const command = authDb.prepare(`SELECT id, command FROM feeder_commands WHERE user_id = ? AND status = 'queued' ORDER BY id ASC LIMIT 1`).get(userId);
+    if (!command) return null;
+    const changed = authDb.prepare(`UPDATE feeder_commands SET status = 'processing', claimed_at = ? WHERE id = ? AND status = 'queued'`).run(now, command.id);
+    return changed.changes === 1 ? command : null;
+  });
+  const command = claim();
+  // Windows Python bridge는 { id, command } 평면 응답을 읽고,
+  // 대기 명령이 없을 때는 204를 기대한다.
+  if (!command) {
+    return res.status(204).end();
+  }
+  res.json(command);
+});
+
+app.post('/api/feeder/result', requireSensorKey, (req, res) => {
+  const userId = req.sensorUserId;
+  const { command_id: commandId, command, success, feed_count: feedCount, angle, locked, message, error } = req.body || {};
+  const normalizedCommand = typeof command === 'string' ? command.toUpperCase() : '';
+  const hasState = Number.isInteger(feedCount) && feedCount >= 0 && feedCount <= 1 && Number.isInteger(angle) && angle >= 0 && angle <= 240 && typeof locked === 'boolean';
+  // RP2040 timeout은 상태값 없이 실패 결과만 온다. 이 경우에도
+  // 해당 명령을 failed 처리해야 processing 상태로 영구히 멈추지 않는다.
+  if (!Number.isInteger(commandId) || !['FEED', 'RESET'].includes(normalizedCommand) || typeof success !== 'boolean' || (success && !hasState)) {
+    return res.status(400).json({ success: false, error: '급식기 결과 형식이 올바르지 않습니다.' });
+  }
+  const existing = authDb.prepare(`SELECT id FROM feeder_commands WHERE id = ? AND user_id = ? AND command = ? AND status = 'processing'`)
+    .get(commandId, userId, normalizedCommand);
+  if (!existing) return res.status(409).json({ success: false, error: '처리 중인 해당 급식기 명령을 찾을 수 없습니다.' });
+  const now = new Date().toISOString();
+  authDb.transaction(() => {
+    authDb.prepare(`UPDATE feeder_commands SET status = ?, completed_at = ?, result_message = ? WHERE id = ?`)
+      .run(success ? 'completed' : 'failed', now, typeof (message || error) === 'string' ? String(message || error).slice(0, 500) : null, commandId);
+    ensureFeederStatusStmt.run(userId, now);
+    if (hasState) {
+      authDb.prepare(`UPDATE feeder_status SET feed_count = ?, angle = ?, locked = ?, last_seen = ?, last_command = ?, last_command_status = ?, updated_at = ? WHERE user_id = ?`)
+        .run(feedCount, angle, locked ? 1 : 0, now, normalizedCommand, success ? 'completed' : 'failed', now, userId);
+    } else {
+      authDb.prepare(`UPDATE feeder_status SET last_seen = ?, last_command = ?, last_command_status = ?, updated_at = ? WHERE user_id = ?`)
+        .run(now, normalizedCommand, 'failed', now, userId);
     }
+  })();
+  res.json({ success: true });
+});
+
+// RP2040 STATUS 응답을 bridge가 전달한다. 재시작/잠금도 웹에 즉시 반영된다.
+app.post('/api/feeder/status', requireSensorKey, (req, res) => {
+  const { feed_count: feedCount, angle, locked } = req.body || {};
+  if (!Number.isInteger(feedCount) || feedCount < 0 || feedCount > 1 || !Number.isInteger(angle) || angle < 0 || angle > 240 || typeof locked !== 'boolean') {
+    return res.status(400).json({ success: false, error: '급식기 상태 형식이 올바르지 않습니다.' });
+  }
+  const now = new Date().toISOString();
+  ensureFeederStatusStmt.run(req.sensorUserId, now);
+  authDb.prepare(`UPDATE feeder_status SET feed_count = ?, angle = ?, locked = ?, last_seen = ?, updated_at = ? WHERE user_id = ?`)
+    .run(feedCount, angle, locked ? 1 : 0, now, now, req.sensorUserId);
+  res.json({ success: true, ...feederStatusPayload(req.sensorUserId) });
 });
 
 app.post(
@@ -5321,15 +5445,15 @@ app.post('/api/alerts', requireAuth, (req, res) => {
 
 app.get('/api/alerts', requireAuth, (req, res) => {
   try {
-    // 예전엔 100개였는데, 수온/pH 쿨다운이 짧았을 때(고쳤음) 하루치
-    // 스팸만으로도 100개가 꽉 차서 과거 기록이 안 보였다. 넉넉하게 늘림.
+    // 기록 화면은 최근 7일의 이벤트만 보여준다. 오래된 알림은 DB에
+    // 보존하되, 목록 조회에서 제외한다.
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const rows = db.prepare(`
       SELECT id, title, time, detail, type
       FROM alerts
-      WHERE user_id = ?
-      ORDER BY id DESC
-      LIMIT 500
-    `).all(req.session.userId);
+      WHERE user_id = ? AND created_at >= ?
+      ORDER BY created_at DESC
+    `).all(req.session.userId, oneWeekAgo);
 
     return res.json(rows);
   } catch (error) {

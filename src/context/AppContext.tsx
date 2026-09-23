@@ -25,6 +25,8 @@ interface LightScheduleItem {
 interface Alert {
   id: number;
 
+  type: string;
+
   title: string;
 
   time: string;
@@ -1033,6 +1035,10 @@ export const AppProvider: React.FC<{
             result.data.id
           ),
 
+          type: String(
+            result.data.type || 'unknown'
+          ),
+
           title: String(
             result.data.title
           ),
@@ -1137,6 +1143,7 @@ export const AppProvider: React.FC<{
           Array.isArray(data)
             ? data.map(item => ({
                 id: Number(item.id),
+                type: String(item.type || 'unknown'),
                 title: String(item.title),
                 time: String(item.time),
                 detail: String(item.detail),
@@ -1402,6 +1409,9 @@ export const AppProvider: React.FC<{
           const newAlert: Alert = {
             id:
               Number(data.alert.id),
+
+            type:
+              String(data.alert.type || 'unknown'),
 
             title:
               String(data.alert.title),

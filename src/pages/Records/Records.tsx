@@ -92,6 +92,9 @@ const Records: React.FC = () => {
   const [alertSort, setAlertSort] =
     useState('최신');
 
+  const [alertCategory, setAlertCategory] =
+    useState('전체');
+
   const [alertPage, setAlertPage] =
     useState(1);
 
@@ -3005,8 +3008,26 @@ const activityChartData =
   // 위험도 정렬 제거
   // ======================================================
 
+  const alertCategoryForType = (type: string) => {
+    if (type.startsWith('temperature-')) return '수온';
+    if (type.startsWith('ph-')) return 'pH';
+    if (type === 'water-decrease') return '수위';
+    if (type === 'water-quality-warning') return '수질';
+    if (type === 'fish-flipped-pose') return '이상 행동';
+    return '기타';
+  };
+
+  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
   const sortedAlerts =
-    [...alerts].sort(
+    alerts
+      .filter(alert => {
+        const alertTime = new Date(alert.time).getTime();
+        const isWithinOneWeek = !Number.isFinite(alertTime) || alertTime >= oneWeekAgo;
+        const matchesCategory = alertCategory === '전체' || alertCategoryForType(alert.type) === alertCategory;
+        return isWithinOneWeek && matchesCategory;
+      })
+      .sort(
       (a, b) => {
 
         const dateA =
@@ -4143,15 +4164,34 @@ const activityChartData =
               text-slate-600
             "
           >
-            {alertSort}
+            {alertCategory} · {alertSort}
           </div>
 
         </div>
 
-        {/* ----------------------------------------------
-            알림 정렬
-            위험도 높은 순 제거
-            ---------------------------------------------- */}
+        <div className="mb-3 text-sm font-medium text-slate-700">알림 범주</div>
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          {['전체', '수온', 'pH', '수위', '수질', '이상 행동', '기타'].map(category => (
+            <button
+              key={category}
+              type="button"
+              onClick={() => {
+                setAlertCategory(category);
+                setAlertPage(1);
+              }}
+              className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                alertCategory === category
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+
+        <div className="mb-3 text-sm font-medium text-slate-700">정렬</div>
 
         <div
           className="
@@ -4223,7 +4263,7 @@ const activityChartData =
                 text-slate-500
               "
             >
-              현재 발생한 알림이 없습니다.
+              최근 1주일 내 발생한 알림이 없습니다.
             </div>
 
           ) : (
