@@ -4,6 +4,7 @@ import json
 import time
 import socket
 import csv
+import base64
 import urllib.request
 import urllib.error
 from datetime import datetime
@@ -81,6 +82,17 @@ SEND_HTTP = True
 HTTP_URL = "http://localhost:80/posi"
 HTTP_TIMEOUT_SEC = 0.2
 
+# 대시보드 "Live Render"용 원본 영상 스트리밍.
+# 기존 좌표 전송(/posi)과 완전히 별개이고, 실패해도 추적/좌표
+# 전송에는 절대 영향 주지 않는다 (아래 send_live_frame이 항상
+# try/except로 감싸져 있음).
+SEND_LIVE_FRAME = True
+LIVE_FRAME_URL = "http://localhost:80/api/live-camera-frame"
+LIVE_FRAME_INTERVAL_SEC = 0.12   # 초당 약 8장 (기존 0.4=2.5장이라 끊겨 보였음)
+LIVE_FRAME_JPEG_QUALITY = 55
+LIVE_FRAME_TIMEOUT_SEC = 0.3
+LIVE_FRAME_MAX_WIDTH = 960       # 원본(1920) 그대로 보내면 무거워서 축소 전송
+
 # 웹앱 호환 좌표계: 원본 전송 코드는 1280x720 카메라를 사용했다.
 # 성장 측정은 1920x1080으로 유지하고, 전송 payload의 픽셀 좌표만 1280x720으로 환산한다.
 WEB_PAYLOAD_WIDTH = 1280
@@ -149,8 +161,12 @@ MAX_GROWTH_LENGTH_PX = 1000.0
 #   물고기가 실제 원통 안을 통과하는 상황을 최대한 엄격하게 선별한다.
 #
 # 현재 카메라 화면에서 원통 내부에 맞춘 시작값. 필요하면 캡처를 보고 미세조정한다.
+# 2026-09-24: 라이브 프레임 캡처로 원통이 오른쪽/아래로 옮겨간 것처럼 보여
+# (830,175,1260,335)로 한 차례 바꿨었으나, 2026-09-29 실제 확인 결과
+# 예전 좌표가 맞아서 되돌림. 이후 같은 날 살짝 좁다는 피드백으로 중심은
+# 유지한 채 사방으로 소폭 확대.
 SAFE_GROWTH_ROI = (450, 80, 1500, 420)
-CYLINDER_MEASURE_ROI = (800, 190, 1000, 300)
+CYLINDER_MEASURE_ROI = (780, 180, 1020, 310)
 
 # -------------------------------------------------------------
 # 실제 원통 내부 자동 판별(기존 라벨 데이터 기반 보수적 시작값)
@@ -1789,6 +1805,52 @@ def send_http_post(payload: dict):
         return False, None, str(e)
 
 
+def send_live_frame(frame):
+    """
+    대시보드 Live Render용으로 현재 프레임을 JPEG로 인코딩해서 서버에 보낸다.
+    이 함수의 어떤 실패도 추적 루프에 영향을 주면 안 되므로,
+    내부에서 발생하는 모든 예외를 잡아서 조용히 무시한다.
+    """
+    try:
+        h, w = frame.shape[:2]
+        if w > LIVE_FRAME_MAX_WIDTH:
+            scale = LIVE_FRAME_MAX_WIDTH / float(w)
+            small = cv2.resize(
+                frame, (LIVE_FRAME_MAX_WIDTH, int(h * scale)),
+                interpolation=cv2.INTER_AREA
+            )
+        else:
+            small = frame
+
+        ok, buf = cv2.imencode(
+            ".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, LIVE_FRAME_JPEG_QUALITY]
+        )
+        if not ok:
+            return False
+
+        b64 = base64.b64encode(buf.tobytes()).decode("ascii")
+        payload = json.dumps(
+            {"image": f"data:image/jpeg;base64,{b64}"}, ensure_ascii=False
+        ).encode("utf-8")
+
+        req = urllib.request.Request(
+            LIVE_FRAME_URL,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=LIVE_FRAME_TIMEOUT_SEC):
+            pass
+
+        return True
+
+    except Exception as e:
+        if PRINT_PAYLOAD:
+            print(f"[WARN] Live frame send failed (무시하고 계속 진행): {e}")
+        return False
+
+
 def _pt_or_none(p):
     return None if p is None else [float(p[0]), float(p[1])]
 
@@ -1984,6 +2046,8 @@ def main():
     print(f"[GROWTH EVENT] resume from event_id={growth_event_id}; next new event={growth_event_id + 1}")
     # 시간대별 검증용. 프로그램은 계속 측정하고, 매 정각 직전 1시간을 자동 요약한다.
     current_hour = datetime.now().strftime("%Y-%m-%d %H")
+
+    last_live_frame_send_time = 0.0
 
     pending_first_frame = first_frame
     while True:
@@ -2203,6 +2267,14 @@ def main():
                 http_last_status = "HTTP: FAIL"
         if PRINT_PAYLOAD and transport_payload is not None and frame_id % PRINT_EVERY_N_FRAMES == 0:
             print(json.dumps(transport_payload, ensure_ascii=False))
+
+        # 대시보드 Live Render용 원본 프레임 전송 (별도 기능, 실패해도 무해함)
+        if SEND_LIVE_FRAME and (timestamp - last_live_frame_send_time) >= LIVE_FRAME_INTERVAL_SEC:
+            try:
+                send_live_frame(frame)
+            except Exception:
+                pass
+            last_live_frame_send_time = timestamp
 
         now = time.time()
         fps = 1.0 / max(1e-6, now - prev_time)
