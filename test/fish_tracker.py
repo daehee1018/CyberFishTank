@@ -771,11 +771,14 @@ def can_save_growth_sample(t: Track) -> Tuple[bool, str]:
 def save_growth_sample(t: Track, frame_id: int, w: int, h: int, event_id: int, reason: str = "ok"):
     """
     조건을 만족한 프레임의 길이 샘플을 날짜별 CSV에 저장.
+    동시에 CSV 한 행과 동일한 dict를 반환하여 /posi payload의 growth_sample로 포함한다.
     하루 대표값은 summarize_daily_growth()에서 median으로 계산.
     """
     os.makedirs(GROWTH_LOG_DIR, exist_ok=True)
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    now_dt = datetime.now()
+    datetime_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+    today = now_dt.strftime("%Y-%m-%d")
     path = os.path.join(GROWTH_LOG_DIR, f"growth_samples_{today}.csv")
     file_exists = os.path.isfile(path)
 
@@ -794,77 +797,84 @@ def save_growth_sample(t: Track, frame_id: int, w: int, h: int, event_id: int, r
         dy = abs(float(t.head[1] - t.tail[1]))
         tilt_deg = float(np.degrees(np.arctan2(dy, max(dx, 1e-6))))
 
+    fieldnames = [
+        "datetime",
+        "date",
+        "frame_id",
+        "track_id",
+        "event_id",
+        "body_length_px",
+        "body_length_cm",
+        "body_height_px",
+        "pose_conf",
+        "bbox_x1",
+        "bbox_y1",
+        "bbox_x2",
+        "bbox_y2",
+        "bbox_w",
+        "bbox_h",
+        "bbox_area",
+        "center_x",
+        "center_y",
+        "frame_w",
+        "frame_h",
+        "head_x",
+        "head_y",
+        "tail_x",
+        "tail_y",
+        "head_tail_dx",
+        "head_tail_dy",
+        "side_tilt_deg",
+        "facing",
+        "flipped",
+        "growth_roi",
+        "save_reason"
+    ]
+
+    sample = {
+        "datetime": datetime_str,
+        "date": today,
+        "frame_id": int(frame_id),
+        "track_id": int(t.tid),
+        "event_id": int(event_id),
+        "body_length_px": None if t.body_length_px is None else float(t.body_length_px),
+        "body_length_cm": None if t.body_length_cm is None else float(t.body_length_cm),
+        "body_height_px": None if t.body_height_px is None else float(t.body_height_px),
+        "pose_conf": float(t.pose_conf),
+        "bbox_x1": x1,
+        "bbox_y1": y1,
+        "bbox_x2": x2,
+        "bbox_y2": y2,
+        "bbox_w": bbox_w,
+        "bbox_h": bbox_h,
+        "bbox_area": bbox_area,
+        "center_x": float(cx),
+        "center_y": float(cy),
+        "frame_w": int(w),
+        "frame_h": int(h),
+        "head_x": None if t.head is None else float(t.head[0]),
+        "head_y": None if t.head is None else float(t.head[1]),
+        "tail_x": None if t.tail is None else float(t.tail[0]),
+        "tail_y": None if t.tail is None else float(t.tail[1]),
+        "head_tail_dx": dx,
+        "head_tail_dy": dy,
+        "side_tilt_deg": tilt_deg,
+        "facing": facing,
+        "flipped": bool(t.flipped),
+        "growth_roi": str({
+            "safe_roi": SAFE_GROWTH_ROI,
+            "cylinder_roi": CYLINDER_MEASURE_ROI
+        }),
+        "save_reason": reason,
+    }
+
     with open(path, "a", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f)
-
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         if not file_exists:
-            writer.writerow([
-                "datetime",
-                "date",
-                "frame_id",
-                "track_id",
-                "event_id",
-                "body_length_px",
-                "body_length_cm",
-                "body_height_px",
-                "pose_conf",
-                "bbox_x1",
-                "bbox_y1",
-                "bbox_x2",
-                "bbox_y2",
-                "bbox_w",
-                "bbox_h",
-                "bbox_area",
-                "center_x",
-                "center_y",
-                "frame_w",
-                "frame_h",
-                "head_x",
-                "head_y",
-                "tail_x",
-                "tail_y",
-                "head_tail_dx",
-                "head_tail_dy",
-                "side_tilt_deg",
-                "facing",
-                "flipped",
-                "growth_roi",
-                "save_reason"
-            ])
+            writer.writeheader()
+        writer.writerow(sample)
 
-        writer.writerow([
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            today,
-            int(frame_id),
-            int(t.tid),
-            int(event_id),
-            None if t.body_length_px is None else float(t.body_length_px),
-            None if t.body_length_cm is None else float(t.body_length_cm),
-            None if t.body_height_px is None else float(t.body_height_px),
-            float(t.pose_conf),
-            x1,
-            y1,
-            x2,
-            y2,
-            bbox_w,
-            bbox_h,
-            bbox_area,
-            float(cx),
-            float(cy),
-            int(w),
-            int(h),
-            None if t.head is None else float(t.head[0]),
-            None if t.head is None else float(t.head[1]),
-            None if t.tail is None else float(t.tail[0]),
-            None if t.tail is None else float(t.tail[1]),
-            dx,
-            dy,
-            tilt_deg,
-            facing,
-            t.flipped,
-            str({"safe_roi": SAFE_GROWTH_ROI, "cylinder_roi": CYLINDER_MEASURE_ROI}),
-            reason
-        ])
+    return sample
 
 
 def summarize_daily_growth(date_str: Optional[str] = None, test_mode: bool = False, send_db: bool = False):
@@ -2049,6 +2059,10 @@ def main():
 
     last_live_frame_send_time = 0.0
 
+    # CSV에 실제로 저장된 raw growth sample을 /posi에 딱 1회 실어 보내기 위한 버퍼.
+    # 평소 프레임에는 growth_sample=None.
+    pending_growth_sample = None
+
     pending_first_frame = first_frame
     while True:
         if pending_first_frame is not None:
@@ -2227,7 +2241,9 @@ def main():
                     last_growth_good_time = now_growth
 
                     if now_growth - last_growth_save_time >= SAVE_GROWTH_EVERY_SEC:
-                        save_growth_sample(t, frame_id, w, h, growth_event_id, growth_reason)
+                        pending_growth_sample = save_growth_sample(
+                            t, frame_id, w, h, growth_event_id, growth_reason
+                        )
                         last_growth_save_time = now_growth
                         saved_today_count += 1
                         length_txt = "None" if t.body_length_px is None else f"{t.body_length_px:.1f}px"
@@ -2254,6 +2270,11 @@ def main():
         if selected_payload is not None:
             transport_payload = make_web_compatible_payload(selected_payload, w, h)
 
+            # 기존 /posi payload에 raw 성장 샘플을 추가한다.
+            # 중요: growth_sample 내부 좌표/값은 CSV와 동일한 원본 카메라 기준값이며
+            # make_web_compatible_payload의 1280x720 스케일링을 적용하지 않는다.
+            transport_payload["growth_sample"] = pending_growth_sample
+
         if udp_sock is not None and transport_payload is not None:
             send_udp(udp_sock, transport_payload)
         if SEND_HTTP and transport_payload is not None:
@@ -2265,6 +2286,10 @@ def main():
                     print(f"[HTTP OK] {HTTP_URL} status={http_status} sent={http_ok_count} coord={WEB_PAYLOAD_WIDTH}x{WEB_PAYLOAD_HEIGHT} source={w}x{h}")
             else:
                 http_last_status = "HTTP: FAIL"
+
+            # growth_sample은 CSV 저장이 발생한 그 프레임의 /posi에만 1회 포함한다.
+            if pending_growth_sample is not None:
+                pending_growth_sample = None
         if PRINT_PAYLOAD and transport_payload is not None and frame_id % PRINT_EVERY_N_FRAMES == 0:
             print(json.dumps(transport_payload, ensure_ascii=False))
 
