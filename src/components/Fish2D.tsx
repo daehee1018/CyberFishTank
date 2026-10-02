@@ -52,7 +52,7 @@ export function Fish2D({
   // 선택된 물고기 이미지 갱신용
   // ============================================================
 
-  const { currentUser, fishColorHue, fishAccessory, activeGraphicDir } = useAppContext();
+  const { currentUser, fishColorHue, fishAccessory, fishAccessoryX, fishAccessoryY, activeGraphicDir } = useAppContext();
 
   const [spriteVersion, setSpriteVersion] = useState(
     Date.now()
@@ -550,8 +550,8 @@ export function Fish2D({
               <span
                 style={{
                   position: 'absolute',
-                  left: ACCESSORY_STYLE[fishAccessory].left,
-                  top: ACCESSORY_STYLE[fishAccessory].top,
+                  left: fishAccessoryX != null ? `${fishAccessoryX}%` : ACCESSORY_STYLE[fishAccessory].left,
+                  top: fishAccessoryY != null ? `${fishAccessoryY}%` : ACCESSORY_STYLE[fishAccessory].top,
                   transform: 'translate(-50%, -50%)',
                   fontSize: ACCESSORY_STYLE[fishAccessory].fontSize,
                   lineHeight: 1,

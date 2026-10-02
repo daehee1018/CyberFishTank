@@ -211,9 +211,15 @@ interface AppContextType {
   fishColorHue: number;
   fishAccessory: string;
 
+  // 액세서리를 드래그해서 잡은 위치(%, 0~100). null이면 액세서리별 기본 위치를 쓴다.
+  fishAccessoryX: number | null;
+  fishAccessoryY: number | null;
+
   updateFishAppearance: (
     colorHue: number,
-    accessory: string
+    accessory: string,
+    accessoryX?: number | null,
+    accessoryY?: number | null
   ) => Promise<{ success: boolean; error?: string }>;
 
   // 어항 배경 테마: 'default' | 'night' | 'halloween' | 'christmas'
@@ -484,6 +490,8 @@ export const AppProvider: React.FC<{
       setFishName('');
       setFishColorHue(0);
       setFishAccessory('');
+      setFishAccessoryX(null);
+      setFishAccessoryY(null);
       setTankTheme('default');
       setSubstrateColor('natural');
       setActiveGraphicDir('');
@@ -516,6 +524,8 @@ export const AppProvider: React.FC<{
       setFishName('');
       setFishColorHue(0);
       setFishAccessory('');
+      setFishAccessoryX(null);
+      setFishAccessoryY(null);
       setTankTheme('default');
       setSubstrateColor('natural');
       setActiveGraphicDir('');
@@ -550,6 +560,8 @@ export const AppProvider: React.FC<{
             setFishName(data.fish.fishName);
             setFishColorHue(data.fish.colorHue ?? 0);
             setFishAccessory(data.fish.accessory ?? '');
+            setFishAccessoryX(data.fish.accessoryX ?? null);
+            setFishAccessoryY(data.fish.accessoryY ?? null);
             setTankTheme(data.fish.tankTheme || 'default');
             setSubstrateColor(data.fish.substrateColor || 'natural');
             setActiveGraphicDir(data.fish.activeGraphicDir || '');
@@ -560,6 +572,8 @@ export const AppProvider: React.FC<{
             setFishName('');
             setFishColorHue(0);
             setFishAccessory('');
+            setFishAccessoryX(null);
+            setFishAccessoryY(null);
             setTankTheme('default');
             setSubstrateColor('natural');
             setActiveGraphicDir('');
@@ -610,13 +624,18 @@ export const AppProvider: React.FC<{
     }
   };
 
-  const updateFishAppearance = async (colorHue: number, accessory: string) => {
+  const updateFishAppearance = async (
+    colorHue: number,
+    accessory: string,
+    accessoryX: number | null = null,
+    accessoryY: number | null = null
+  ) => {
     try {
       const response = await fetch(`${API_BASE}/api/fish/appearance`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ colorHue, accessory }),
+        body: JSON.stringify({ colorHue, accessory, accessoryX, accessoryY }),
       });
 
       const data = await response.json();
@@ -627,6 +646,8 @@ export const AppProvider: React.FC<{
 
       setFishColorHue(colorHue);
       setFishAccessory(accessory);
+      setFishAccessoryX(accessoryX);
+      setFishAccessoryY(accessoryY);
       return { success: true };
     } catch (error) {
       console.error('❌ 물고기 외형 저장 실패:', error);
@@ -701,6 +722,8 @@ export const AppProvider: React.FC<{
         setFishName(data.fish.fishName);
         setFishColorHue(data.fish.colorHue ?? 0);
         setFishAccessory(data.fish.accessory ?? '');
+        setFishAccessoryX(data.fish.accessoryX ?? null);
+        setFishAccessoryY(data.fish.accessoryY ?? null);
         setTankTheme(data.fish.tankTheme || 'default');
         setSubstrateColor(data.fish.substrateColor || 'natural');
         setActiveGraphicDir(data.fish.activeGraphicDir || '');
@@ -762,6 +785,12 @@ export const AppProvider: React.FC<{
 
   const [fishAccessory, setFishAccessory] =
     useState('');
+
+  const [fishAccessoryX, setFishAccessoryX] =
+    useState<number | null>(null);
+
+  const [fishAccessoryY, setFishAccessoryY] =
+    useState<number | null>(null);
 
   const [tankTheme, setTankTheme] =
     useState('default');
@@ -2170,6 +2199,8 @@ export const AppProvider: React.FC<{
     updateFish,
     fishColorHue,
     fishAccessory,
+    fishAccessoryX,
+    fishAccessoryY,
     updateFishAppearance,
     tankTheme,
     updateTankTheme,

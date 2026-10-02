@@ -240,6 +240,16 @@ try {
   // 이미 있으면 예외. 정상 상황.
 }
 
+// 액세서리를 드래그해서 직접 잡은 위치(%, 0~100). NULL이면
+// 액세서리별 기본 위치(프론트 ACCESSORY_STYLE)를 그대로 쓴다.
+try {
+  authDb.prepare('ALTER TABLE user_fish ADD COLUMN accessory_x REAL').run();
+  authDb.prepare('ALTER TABLE user_fish ADD COLUMN accessory_y REAL').run();
+  console.log('✅ user_fish.accessory_x / accessory_y 컬럼 추가됨');
+} catch (error) {
+  // 이미 있으면 예외. 정상 상황.
+}
+
 // 어항 배경 테마(기본/밤/할로윈/크리스마스). 물고기가 아니라
 // 어항 전체에 적용되지만, 계정별 설정이라 같은 테이블에 둔다.
 try {
@@ -298,7 +308,7 @@ authDb.prepare(`
 console.log('✅ fish_graphics 테이블 확인 완료');
 
 const getUserFishStmt = authDb.prepare(`
-  SELECT species, fish_name, color_hue, accessory, tank_theme, substrate_color, active_graphic_dir, decorations_json FROM user_fish WHERE user_id = ?
+  SELECT species, fish_name, color_hue, accessory, accessory_x, accessory_y, tank_theme, substrate_color, active_graphic_dir, decorations_json FROM user_fish WHERE user_id = ?
 `);
 
 const upsertUserFishStmt = authDb.prepare(`
@@ -311,7 +321,7 @@ const upsertUserFishStmt = authDb.prepare(`
 `);
 
 const updateUserFishAppearanceStmt = authDb.prepare(`
-  UPDATE user_fish SET color_hue = @color_hue, accessory = @accessory WHERE user_id = @user_id
+  UPDATE user_fish SET color_hue = @color_hue, accessory = @accessory, accessory_x = @accessory_x, accessory_y = @accessory_y WHERE user_id = @user_id
 `);
 
 const updateTankThemeStmt = authDb.prepare(`
@@ -583,6 +593,8 @@ app.get('/api/fish', requireAuth, (req, res) => {
           fishName: row.fish_name,
           colorHue: row.color_hue,
           accessory: row.accessory,
+          accessoryX: row.accessory_x,
+          accessoryY: row.accessory_y,
           tankTheme: row.tank_theme,
           substrateColor: row.substrate_color,
           activeGraphicDir: row.active_graphic_dir,
@@ -618,7 +630,7 @@ app.post('/api/fish', requireAuth, (req, res) => {
 // ============================================================
 
 app.post('/api/fish/appearance', requireAuth, (req, res) => {
-  const { colorHue, accessory } = req.body || {};
+  const { colorHue, accessory, accessoryX, accessoryY } = req.body || {};
 
   const normalizedHue = Number(colorHue);
 
@@ -632,6 +644,19 @@ app.post('/api/fish/appearance', requireAuth, (req, res) => {
     return res.status(400).json({ success: false, error: '지원하지 않는 액세서리입니다.' });
   }
 
+  // 사용자가 드래그해서 직접 잡은 위치(%). 안 보내면(null/undefined) 액세서리 기본 위치를 쓴다.
+  const normalizedX =
+    accessoryX === null || accessoryX === undefined ? null : Number(accessoryX);
+  const normalizedY =
+    accessoryY === null || accessoryY === undefined ? null : Number(accessoryY);
+
+  if (
+    (normalizedX !== null && (!Number.isFinite(normalizedX) || normalizedX < 0 || normalizedX > 100)) ||
+    (normalizedY !== null && (!Number.isFinite(normalizedY) || normalizedY < 0 || normalizedY > 100))
+  ) {
+    return res.status(400).json({ success: false, error: '액세서리 위치 값이 올바르지 않습니다.' });
+  }
+
   const existing = getUserFishStmt.get(req.session.userId);
 
   if (!existing) {
@@ -642,11 +667,18 @@ app.post('/api/fish/appearance', requireAuth, (req, res) => {
     user_id: req.session.userId,
     color_hue: Math.round(normalizedHue),
     accessory: normalizedAccessory,
+    accessory_x: normalizedX,
+    accessory_y: normalizedY,
   });
 
   res.json({
     success: true,
-    fish: { colorHue: Math.round(normalizedHue), accessory: normalizedAccessory },
+    fish: {
+      colorHue: Math.round(normalizedHue),
+      accessory: normalizedAccessory,
+      accessoryX: normalizedX,
+      accessoryY: normalizedY,
+    },
   });
 });
 
@@ -2803,44 +2835,47 @@ const insertYoloDataForUser =
   // 없으면 서버 수신 시간 사용
   // ============================================================
 
+  // 2026-09-30: toISOString()은 UTC 기준이라, sample_datetime이
+  // 로컬(KST) 문자열일 때 자정~오전 9시 사이 샘플이 전날 날짜로
+  // 잘못 집계되던 버그를 수정. 로컬 연/월/일을 직접 사용한다.
   function getGrowthDate(
     sampleDatetime
   ) {
 
-    const date =
+    const parsed =
       sampleDatetime
         ? new Date(
             sampleDatetime
           )
         : new Date();
 
-
-    if (
+    const d =
       Number.isNaN(
-        date.getTime()
+        parsed.getTime()
       )
-    ) {
+        ? new Date()
+        : parsed;
 
-      const now =
-        new Date();
+    const year =
+      d.getFullYear();
 
-
-      return now
-        .toISOString()
-        .slice(
-          0,
-          10
-        );
-
-    }
-
-
-    return date
-      .toISOString()
-      .slice(
-        0,
-        10
+    const month =
+      String(
+        d.getMonth() + 1
+      ).padStart(
+        2,
+        '0'
       );
+
+    const day =
+      String(
+        d.getDate()
+      ).padStart(
+        2,
+        '0'
+      );
+
+    return `${year}-${month}-${day}`;
 
   }
 

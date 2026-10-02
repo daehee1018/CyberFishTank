@@ -3,7 +3,12 @@
 // 가벼운 코스메틱 커스터마이징: 색상 틴트(hue-rotate) + 액세서리(이모지).
 // AI 사진 변환(FishSettings)과 달리 새 이미지를 만들지 않고, 어떤
 // 스프라이트든 위에 겹쳐 적용되므로 즉시 반영되고 되돌리기도 쉽다.
-import React, { useEffect, useState } from 'react';
+//
+// 물고기마다 실제 크기/프레임이 달라 액세서리 기본 위치가 항상
+// 맞지는 않는다. 그래서 미리보기에서 직접 끌어서 위치를 잡을 수
+// 있게 하고, 그 값(%)을 저장한다. 안 잡으면(null) 액세서리별
+// 기본 위치(ACCESSORY_STYLE)를 그대로 쓴다.
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { ACCESSORY_STYLE } from './Fish2D';
 
@@ -25,20 +30,33 @@ const ACCESSORY_OPTIONS: { key: string; label: string; emoji: string }[] = [
   { key: 'flower', label: '꽃', emoji: '🌸' },
 ];
 
+// '70%' 같은 문자열 기본값을 숫자(%)로 변환. 파싱 실패하면 50(가운데).
+function parsePercent(value: string | undefined): number {
+  const n = value ? parseFloat(value) : NaN;
+  return Number.isFinite(n) ? n : 50;
+}
+
 export default function FishAppearance() {
   const {
     currentUser,
     fishSpecies,
     fishColorHue,
     fishAccessory,
+    fishAccessoryX,
+    fishAccessoryY,
     updateFishAppearance,
     activeGraphicDir,
   } = useAppContext();
 
   const [hue, setHue] = useState(fishColorHue);
   const [accessory, setAccessory] = useState(fishAccessory);
+  const [posX, setPosX] = useState<number | null>(fishAccessoryX);
+  const [posY, setPosY] = useState<number | null>(fishAccessoryY);
+  const [dragging, setDragging] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  const previewBoxRef = useRef<HTMLDivElement | null>(null);
 
   // 서버에서 값이 로드/변경되면 편집 중이 아닐 때 동기화
   useEffect(() => {
@@ -47,7 +65,9 @@ export default function FishAppearance() {
 
   useEffect(() => {
     setAccessory(fishAccessory);
-  }, [fishAccessory]);
+    setPosX(fishAccessoryX);
+    setPosY(fishAccessoryY);
+  }, [fishAccessory, fishAccessoryX, fishAccessoryY]);
 
   // Fish2D/그래픽 갤러리와 같은 규칙: activeGraphicDir이 있으면
   // 그 버전 폴더를, 없으면 예전 방식(계정 바로 아래)을 본다.
@@ -57,16 +77,78 @@ export default function FishAppearance() {
       : `/fish_sprites/${currentUser.id}/fish_right.png`
     : '/fish_sprites/fish_right.png';
 
-  const previewAccessoryStyle =
-    accessory ? ACCESSORY_STYLE[accessory] : null;
+  const defaultStyle = accessory ? ACCESSORY_STYLE[accessory] : null;
 
-  const dirty = hue !== fishColorHue || accessory !== fishAccessory;
+  // 커스텀 위치가 있으면 그걸, 없으면 액세서리 기본 위치를 쓴다.
+  const effectiveX = posX ?? (defaultStyle ? parsePercent(defaultStyle.left) : 50);
+  const effectiveY = posY ?? (defaultStyle ? parsePercent(defaultStyle.top) : 50);
+
+  const hasCustomPos = posX !== null || posY !== null;
+
+  const dirty =
+    hue !== fishColorHue ||
+    accessory !== fishAccessory ||
+    posX !== fishAccessoryX ||
+    posY !== fishAccessoryY;
+
+  // ============================================================
+  // 액세서리 드래그로 위치 잡기
+  //
+  // 미리보기 박스(previewBoxRef) 기준 0~100% 좌표로 저장한다.
+  // 포인터 이벤트 하나로 마우스/터치 둘 다 처리한다.
+  // ============================================================
+
+  const clampPercent = (value: number) => Math.min(100, Math.max(0, value));
+
+  const updatePosFromClientXY = (clientX: number, clientY: number) => {
+    const box = previewBoxRef.current;
+    if (!box) return;
+
+    const rect = box.getBoundingClientRect();
+    const x = clampPercent(((clientX - rect.left) / rect.width) * 100);
+    const y = clampPercent(((clientY - rect.top) / rect.height) * 100);
+
+    setPosX(Math.round(x * 10) / 10);
+    setPosY(Math.round(y * 10) / 10);
+  };
+
+  const handleAccessoryPointerDown = (
+    event: React.PointerEvent<HTMLSpanElement>
+  ) => {
+    if (!accessory) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+    updatePosFromClientXY(event.clientX, event.clientY);
+  };
+
+  const handleAccessoryPointerMove = (
+    event: React.PointerEvent<HTMLSpanElement>
+  ) => {
+    if (!dragging) return;
+    updatePosFromClientXY(event.clientX, event.clientY);
+  };
+
+  const handleAccessoryPointerUp = (
+    event: React.PointerEvent<HTMLSpanElement>
+  ) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDragging(false);
+  };
+
+  const handleResetPos = () => {
+    setPosX(null);
+    setPosY(null);
+  };
 
   const handleSave = async () => {
     setSaving(true);
     setMessage('');
 
-    const result = await updateFishAppearance(hue, accessory);
+    const result = await updateFishAppearance(hue, accessory, posX, posY);
 
     setSaving(false);
 
@@ -92,12 +174,16 @@ export default function FishAppearance() {
       </p>
 
       <div className="flex flex-col sm:flex-row gap-5">
-        {/* 미리보기 */}
-        <div className="flex h-32 w-32 flex-none items-center justify-center rounded-[16px] border border-slate-200 bg-slate-50">
-          <div className="relative">
+        {/* 미리보기 (액세서리는 드래그해서 위치 조절 가능) */}
+        <div className="flex flex-col items-center gap-1.5">
+          <div
+            ref={previewBoxRef}
+            className="relative flex h-32 w-32 flex-none items-center justify-center rounded-[16px] border border-slate-200 bg-slate-50"
+          >
             <img
               src={previewSrc}
               alt="미리보기"
+              draggable={false}
               onError={(e) => {
                 e.currentTarget.src = '/fish_sprites/fish_right.png';
               }}
@@ -105,24 +191,48 @@ export default function FishAppearance() {
                 width: '84px',
                 height: 'auto',
                 objectFit: 'contain',
+                pointerEvents: 'none',
                 filter: `hue-rotate(${hue}deg) drop-shadow(0 4px 6px rgba(15,23,42,0.3))`,
               }}
             />
-            {previewAccessoryStyle && (
+            {accessory && (
               <span
+                onPointerDown={handleAccessoryPointerDown}
+                onPointerMove={handleAccessoryPointerMove}
+                onPointerUp={handleAccessoryPointerUp}
                 style={{
                   position: 'absolute',
-                  left: previewAccessoryStyle.left,
-                  top: previewAccessoryStyle.top,
+                  left: `${effectiveX}%`,
+                  top: `${effectiveY}%`,
                   transform: 'translate(-50%, -50%)',
-                  fontSize: '18px',
+                  fontSize: '20px',
                   lineHeight: 1,
+                  cursor: dragging ? 'grabbing' : 'grab',
+                  touchAction: 'none',
+                  userSelect: 'none',
                 }}
               >
-                {previewAccessoryStyle.emoji}
+                {ACCESSORY_STYLE[accessory]?.emoji}
               </span>
             )}
           </div>
+
+          {accessory && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400">
+                끌어서 위치 조절
+              </span>
+              {hasCustomPos && (
+                <button
+                  type="button"
+                  onClick={handleResetPos}
+                  className="text-[11px] font-medium text-blue-600 hover:underline"
+                >
+                  기본 위치로
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 space-y-4">
@@ -162,7 +272,12 @@ export default function FishAppearance() {
               {ACCESSORY_OPTIONS.map((option) => (
                 <button
                   key={option.key || 'none'}
-                  onClick={() => setAccessory(option.key)}
+                  onClick={() => {
+                    setAccessory(option.key);
+                    // 다른 액세서리로 바꾸면 이전 커스텀 위치는 의미가 없으므로 초기화.
+                    setPosX(null);
+                    setPosY(null);
+                  }}
                   className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                     accessory === option.key
                       ? 'border-slate-900 bg-slate-900 text-white'
