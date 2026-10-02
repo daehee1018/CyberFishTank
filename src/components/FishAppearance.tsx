@@ -176,45 +176,52 @@ export default function FishAppearance() {
       <div className="flex flex-col sm:flex-row gap-5">
         {/* 미리보기 (액세서리는 드래그해서 위치 조절 가능) */}
         <div className="flex flex-col items-center gap-1.5">
-          <div
-            ref={previewBoxRef}
-            className="relative flex h-32 w-32 flex-none items-center justify-center rounded-[16px] border border-slate-200 bg-slate-50"
-          >
-            <img
-              src={previewSrc}
-              alt="미리보기"
-              draggable={false}
-              onError={(e) => {
-                e.currentTarget.src = '/fish_sprites/fish_right.png';
-              }}
-              style={{
-                width: '84px',
-                height: 'auto',
-                objectFit: 'contain',
-                pointerEvents: 'none',
-                filter: `hue-rotate(${hue}deg) drop-shadow(0 4px 6px rgba(15,23,42,0.3))`,
-              }}
-            />
-            {accessory && (
-              <span
-                onPointerDown={handleAccessoryPointerDown}
-                onPointerMove={handleAccessoryPointerMove}
-                onPointerUp={handleAccessoryPointerUp}
-                style={{
-                  position: 'absolute',
-                  left: `${effectiveX}%`,
-                  top: `${effectiveY}%`,
-                  transform: 'translate(-50%, -50%)',
-                  fontSize: '20px',
-                  lineHeight: 1,
-                  cursor: dragging ? 'grabbing' : 'grab',
-                  touchAction: 'none',
-                  userSelect: 'none',
+          <div className="flex h-32 w-32 flex-none items-center justify-center rounded-[16px] border border-slate-200 bg-slate-50">
+            {/* Fish2D의 실제 구조(이미지를 꽉 감싸는 relative/inline-block
+                래퍼)와 똑같은 기준 박스를 써야 한다. 바깥의 h-32 w-32 박스는
+                가운데 정렬용 여백이 있어서, 거기 기준으로 %를 재면 실제
+                대시보드(이미지에 딱 맞는 박스 기준)와 틀어진다. */}
+            <div
+              ref={previewBoxRef}
+              style={{ position: 'relative', display: 'inline-block' }}
+            >
+              <img
+                src={previewSrc}
+                alt="미리보기"
+                draggable={false}
+                onError={(e) => {
+                  e.currentTarget.src = '/fish_sprites/fish_right.png';
                 }}
-              >
-                {ACCESSORY_STYLE[accessory]?.emoji}
-              </span>
-            )}
+                style={{
+                  width: '84px',
+                  height: 'auto',
+                  objectFit: 'contain',
+                  display: 'block',
+                  pointerEvents: 'none',
+                  filter: `hue-rotate(${hue}deg) drop-shadow(0 4px 6px rgba(15,23,42,0.3))`,
+                }}
+              />
+              {accessory && (
+                <span
+                  onPointerDown={handleAccessoryPointerDown}
+                  onPointerMove={handleAccessoryPointerMove}
+                  onPointerUp={handleAccessoryPointerUp}
+                  style={{
+                    position: 'absolute',
+                    left: `${effectiveX}%`,
+                    top: `${effectiveY}%`,
+                    transform: 'translate(-50%, -50%)',
+                    fontSize: '20px',
+                    lineHeight: 1,
+                    cursor: dragging ? 'grabbing' : 'grab',
+                    touchAction: 'none',
+                    userSelect: 'none',
+                  }}
+                >
+                  {ACCESSORY_STYLE[accessory]?.emoji}
+                </span>
+              )}
+            </div>
           </div>
 
           {accessory && (
