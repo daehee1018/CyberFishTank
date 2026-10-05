@@ -62,9 +62,17 @@ function mean(values) {
 // DB 연결
 // ======================================================
 
+// WAL 모드 + busy_timeout: 메인 서버가 계속 쓰기 작업을 하는 와중에
+// 야간 배치 스크립트(calculate_growth.cjs/calculate_activity.cjs)가
+// 같은 DB 파일을 열면 'database is locked'로 즉시 죽던 문제가 있었다.
+// WAL은 동시 쓰기 충돌 자체를 줄이고, busy_timeout은 그래도 겹치면
+// 즉시 실패하지 않고 잠깐 재시도하게 한다.
 const db = new Database(
   DB_PATH
 );
+
+db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 
 
 // ======================================================
