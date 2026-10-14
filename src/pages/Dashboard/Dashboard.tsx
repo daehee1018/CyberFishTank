@@ -7,11 +7,23 @@ const API_BASE =
   import.meta.env.VITE_API_URL ||
   'https://ggnu.site';
 
+const formatLastFeedTime = (value: string | null | undefined) => {
+  if (!value || Number.isNaN(Date.parse(value))) return null;
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value));
+};
+
 interface FeederStatus {
   feed_count: number;
   angle: number;
   locked: boolean;
   online: boolean;
+  last_feed_at: string | null;
   last_command: string | null;
   last_command_status: string | null;
 }
@@ -490,7 +502,7 @@ const Dashboard: React.FC = () => {
           <div className="mt-4 grid grid-cols-2 gap-2 text-center">
             <div className="rounded-[12px] bg-white p-3">
               <div className="text-xs text-slate-500">급여 횟수</div>
-              <div className="mt-1 font-semibold text-slate-900">{feederStatus?.feed_count ?? 0} / 1</div>
+              <div className="mt-1 font-semibold text-slate-900">{feederStatus?.feed_count ?? 0} / 2</div>
             </div>
             <div className="rounded-[12px] bg-white p-3">
               <div className="text-xs text-slate-500">현재 위치</div>
@@ -499,15 +511,20 @@ const Dashboard: React.FC = () => {
           </div>
 
           <div className="mt-3 break-keep text-center text-xs leading-5 text-slate-600">
-            {feederStatus?.last_command_status === 'queued' ? '급여 명령 전송 대기 중...' : (feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 1) ? '급여 완료 · 초기화가 필요합니다.' : '급여 가능'}
+            {feederStatus?.last_command_status === 'queued' ? '급여 명령 전송 대기 중...' : (feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2) ? '2회 급여 완료 · 초기화가 필요합니다.' : '급여 가능'}
           </div>
+          {formatLastFeedTime(feederStatus?.last_feed_at) && (
+            <div className="mt-1 text-center text-xs leading-5 text-slate-500">
+              마지막 급여: {formatLastFeedTime(feederStatus?.last_feed_at)}
+            </div>
+          )}
           {feederError && <div className="mt-3 break-words rounded-[12px] bg-red-50 px-3 py-2 text-xs leading-5 text-red-600">{feederError}</div>}
 
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => requestFeederCommand('feed')}
-              disabled={feederRequesting || feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 1 || feederStatus?.last_command_status === 'queued'}
+              disabled={feederRequesting || feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2 || feederStatus?.last_command_status === 'queued'}
               className="min-w-0 rounded-[12px] bg-slate-900 px-2 py-2 text-sm font-medium leading-5 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               밥 주기
@@ -700,7 +717,8 @@ const Dashboard: React.FC = () => {
                     inset-0
                     h-full
                     w-full
-                    object-cover
+                    bg-slate-900
+                    object-contain
                   "
                   alt="실시간 어항 카메라"
                 />
@@ -733,7 +751,7 @@ const Dashboard: React.FC = () => {
                 playsInline
                 className={
                   isLiveMode
-                    ? 'absolute inset-0 z-0 h-full w-full object-cover'
+                    ? 'absolute inset-0 z-0 h-full w-full bg-slate-900 object-contain'
                     : 'absolute right-3 top-3 z-10 h-24 w-32 overflow-hidden rounded-[10px] border border-white/70 object-cover shadow-lg'
                 }
               />

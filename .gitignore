@@ -43,6 +43,12 @@ __pycache__/
 
 # DB 마이그레이션/작업 전 백업 스냅샷
 *.backup-*
+
+# SQLite 실행 중 생성되는 파일 및 로컬 DB 백업
+# (WAL/SHM 파일은 실행 중 계속 변경되므로 Git에 추가하면 안 됨)
+*.db-wal
+*.db-shm
+*.db.*
 ai_env/
 node_modules/
 uploads/

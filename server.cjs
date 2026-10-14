@@ -4471,17 +4471,73 @@ function processStoredSensorAlerts() {
 // 자동 급식기: 웹은 큐를 관리하고, Python bridge가 센서 키로
 // 명령을 하나씩 가져간다. RP2040의 결과만 최종 상태로 기록한다.
 // ============================================================
+const FEEDER_MAX_FEEDS = 2;
+const FEEDER_FEED_ANGLE = 60;
+
 authDb.prepare(`
   CREATE TABLE IF NOT EXISTS feeder_status (
     user_id INTEGER PRIMARY KEY,
-    feed_count INTEGER NOT NULL DEFAULT 0 CHECK (feed_count >= 0 AND feed_count <= 1),
+    feed_count INTEGER NOT NULL DEFAULT 0 CHECK (feed_count >= 0 AND feed_count <= 2),
     angle INTEGER NOT NULL DEFAULT 0,
     locked INTEGER NOT NULL DEFAULT 0,
     last_seen TEXT,
+    last_feed_at TEXT,
     last_command TEXT,
     last_command_status TEXT,
     updated_at TEXT NOT NULL
   )
+`).run();
+
+// 기존 1회 급여용 테이블은 SQLite CHECK 제약을 ALTER 할 수 없어
+// 데이터를 보존한 채 2회 급여용 스키마로 한 번 마이그레이션한다.
+const feederStatusSchema = authDb.prepare(`
+  SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'feeder_status'
+`).get();
+if (feederStatusSchema?.sql?.includes('feed_count <= 1')) {
+  authDb.transaction(() => {
+    authDb.exec(`
+      ALTER TABLE feeder_status RENAME TO feeder_status_one_feed_legacy;
+      CREATE TABLE feeder_status (
+        user_id INTEGER PRIMARY KEY,
+        feed_count INTEGER NOT NULL DEFAULT 0 CHECK (feed_count >= 0 AND feed_count <= 2),
+        angle INTEGER NOT NULL DEFAULT 0,
+        locked INTEGER NOT NULL DEFAULT 0,
+        last_seen TEXT,
+        last_feed_at TEXT,
+        last_command TEXT,
+        last_command_status TEXT,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO feeder_status (
+        user_id, feed_count, angle, locked, last_seen,
+        last_command, last_command_status, updated_at
+      )
+      SELECT
+        user_id, feed_count, angle, locked, last_seen,
+        last_command, last_command_status, updated_at
+      FROM feeder_status_one_feed_legacy;
+      DROP TABLE feeder_status_one_feed_legacy;
+    `);
+  })();
+  console.log('✅ 급식기 상태를 하루 2회 급여용으로 마이그레이션했습니다.');
+}
+try {
+  authDb.prepare('ALTER TABLE feeder_status ADD COLUMN last_feed_at TEXT').run();
+} catch (error) {
+  // 이미 컬럼이 있으면 정상이다.
+}
+// 기존에 완료된 급여도 마지막 급여 시각으로 표시한다.
+authDb.prepare(`
+  UPDATE feeder_status
+  SET last_feed_at = (
+    SELECT completed_at FROM feeder_commands
+    WHERE user_id = feeder_status.user_id
+      AND command = 'FEED'
+      AND status = 'completed'
+    ORDER BY completed_at DESC, id DESC
+    LIMIT 1
+  )
+  WHERE last_feed_at IS NULL
 `).run();
 authDb.prepare(`
   CREATE TABLE IF NOT EXISTS feeder_commands (
@@ -4520,6 +4576,7 @@ function feederStatusPayload(userId) {
     locked: Boolean(status.locked),
     online: Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs <= 15_000,
     last_seen: status.last_seen,
+    last_feed_at: status.last_feed_at,
     last_command: status.last_command,
     last_command_status: status.last_command_status,
   };
@@ -4532,9 +4589,9 @@ function queueFeederCommand(req, res, command) {
   if (pending) {
     return res.status(409).json({ success: false, error: '이미 처리 중인 급식기 명령이 있습니다.', command: pending });
   }
-  // 하루 1회 급여 제한. 펌웨어 잠금 상태와 무관하게 서버에서도 추가 급여를 막는다.
-  if (command === 'FEED' && (current.locked || current.feed_count >= 1)) {
-    return res.status(409).json({ success: false, error: '오늘의 급여가 완료되었습니다. 초기화 후 다시 시도해주세요.' });
+  // 두 번째 급여(120도)까지 허용하고, 그 뒤에는 RP2040 잠금과 함께 막는다.
+  if (command === 'FEED' && (current.locked || current.feed_count >= FEEDER_MAX_FEEDS)) {
+    return res.status(409).json({ success: false, error: '오늘의 2회 급여가 완료되었습니다. 초기화 후 다시 시도해주세요.' });
   }
   const now = new Date().toISOString();
   const result = insertFeederCommandStmt.run(userId, command, now);
@@ -4574,7 +4631,13 @@ app.post('/api/feeder/result', requireSensorKey, (req, res) => {
   const userId = req.sensorUserId;
   const { command_id: commandId, command, success, feed_count: feedCount, angle, locked, message, error } = req.body || {};
   const normalizedCommand = typeof command === 'string' ? command.toUpperCase() : '';
-  const hasState = Number.isInteger(feedCount) && feedCount >= 0 && feedCount <= 1 && Number.isInteger(angle) && angle >= 0 && angle <= 240 && typeof locked === 'boolean';
+  const hasState = Number.isInteger(feedCount)
+    && feedCount >= 0
+    && feedCount <= FEEDER_MAX_FEEDS
+    && Number.isInteger(angle)
+    && angle === feedCount * FEEDER_FEED_ANGLE
+    && typeof locked === 'boolean'
+    && locked === (feedCount === FEEDER_MAX_FEEDS);
   // RP2040 timeout은 상태값 없이 실패 결과만 온다. 이 경우에도
   // 해당 명령을 failed 처리해야 processing 상태로 영구히 멈추지 않는다.
   if (!Number.isInteger(commandId) || !['FEED', 'RESET'].includes(normalizedCommand) || typeof success !== 'boolean' || (success && !hasState)) {
@@ -4589,8 +4652,9 @@ app.post('/api/feeder/result', requireSensorKey, (req, res) => {
       .run(success ? 'completed' : 'failed', now, typeof (message || error) === 'string' ? String(message || error).slice(0, 500) : null, commandId);
     ensureFeederStatusStmt.run(userId, now);
     if (hasState) {
-      authDb.prepare(`UPDATE feeder_status SET feed_count = ?, angle = ?, locked = ?, last_seen = ?, last_command = ?, last_command_status = ?, updated_at = ? WHERE user_id = ?`)
-        .run(feedCount, angle, locked ? 1 : 0, now, normalizedCommand, success ? 'completed' : 'failed', now, userId);
+      const lastFeedAt = normalizedCommand === 'FEED' && success ? now : null;
+      authDb.prepare(`UPDATE feeder_status SET feed_count = ?, angle = ?, locked = ?, last_seen = ?, last_feed_at = COALESCE(?, last_feed_at), last_command = ?, last_command_status = ?, updated_at = ? WHERE user_id = ?`)
+        .run(feedCount, angle, locked ? 1 : 0, now, lastFeedAt, normalizedCommand, success ? 'completed' : 'failed', now, userId);
     } else {
       authDb.prepare(`UPDATE feeder_status SET last_seen = ?, last_command = ?, last_command_status = ?, updated_at = ? WHERE user_id = ?`)
         .run(now, normalizedCommand, 'failed', now, userId);
@@ -4602,7 +4666,13 @@ app.post('/api/feeder/result', requireSensorKey, (req, res) => {
 // RP2040 STATUS 응답을 bridge가 전달한다. 재시작/잠금도 웹에 즉시 반영된다.
 app.post('/api/feeder/status', requireSensorKey, (req, res) => {
   const { feed_count: feedCount, angle, locked } = req.body || {};
-  if (!Number.isInteger(feedCount) || feedCount < 0 || feedCount > 1 || !Number.isInteger(angle) || angle < 0 || angle > 240 || typeof locked !== 'boolean') {
+  if (!Number.isInteger(feedCount)
+    || feedCount < 0
+    || feedCount > FEEDER_MAX_FEEDS
+    || !Number.isInteger(angle)
+    || angle !== feedCount * FEEDER_FEED_ANGLE
+    || typeof locked !== 'boolean'
+    || locked !== (feedCount === FEEDER_MAX_FEEDS)) {
     return res.status(400).json({ success: false, error: '급식기 상태 형식이 올바르지 않습니다.' });
   }
   const now = new Date().toISOString();
