@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test tests/*.test.cjs",
     "build": "tsc && vite build",
     "server": "fuser -k 5000/tcp || true && node server.cjs",
     "start": "concurrently \"npm run dev\" \"npm run server\""

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AuthStory } from '../../components/UI';
 import { useNavigate, Link, Navigate } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
 
@@ -45,17 +46,17 @@ const Signup: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-6">
-      <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-        <div className="mb-6 text-center">
-          <div className="text-sm text-slate-500">CyberFishTank</div>
-          <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">회원가입</div>
-        </div>
+    <div className="cft-auth-page">
+      <div className="cft-auth-shell">
+        <AuthStory />
+        <div className="cft-auth-form">
+        <div className="cft-auth-heading"><h1>나만의 어항을 시작하세요</h1><p>계정을 만들고 물고기와 함께하세요.</p></div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <label className="block text-sm font-medium text-slate-600">
             아이디
             <input
+              placeholder="아이디를 입력해주세요"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               autoComplete="username"
@@ -67,6 +68,7 @@ const Signup: React.FC = () => {
             비밀번호
             <input
               type="password"
+              placeholder="비밀번호를 입력해주세요"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="new-password"
@@ -78,6 +80,7 @@ const Signup: React.FC = () => {
             비밀번호 확인
             <input
               type="password"
+              placeholder="비밀번호를 다시 입력해주세요"
               value={passwordConfirm}
               onChange={(event) => setPasswordConfirm(event.target.value)}
               autoComplete="new-password"
@@ -105,6 +108,7 @@ const Signup: React.FC = () => {
           <Link to="/login" className="font-medium text-slate-900 underline underline-offset-2">
             로그인
           </Link>
+        </div>
         </div>
       </div>
     </div>

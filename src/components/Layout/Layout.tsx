@@ -1,94 +1,41 @@
 import React from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
+import { Icon } from '../UI';
+import type { IconName } from '../UI';
 
 const Layout: React.FC = () => {
-  const { tankName, currentUser, logout } = useAppContext();
+  const { tankName, currentUser, logout, alerts } = useAppContext();
   const navigate = useNavigate();
-
+  const location = useLocation();
+  const menus: { name: string; mobileName: string; path: string; icon: IconName; end?: boolean }[] = [
+    { name: '대시보드', mobileName: '대시보드', path: '/', icon: 'grid', end: true },
+    { name: '기록', mobileName: '기록', path: '/records', icon: 'chart' },
+    { name: '개인 설정', mobileName: '꾸미기', path: '/personal-settings', icon: 'pen' },
+    { name: '설정', mobileName: '설정', path: '/settings', icon: 'settings' },
+  ];
   const handleLogout = async () => {
     await logout();
     navigate('/login', { replace: true });
   };
-
-  const topMenus = [
-    { name: '대시보드', path: '/' },
-    { name: '기록', path: '/records' },
-    { name: '개인 설정', path: '/personal-settings' },
-    { name: '설정', path: '/settings' },
-    ...(currentUser?.role === 'admin'
-      ? [{ name: '테스트', path: '/admin-test' }]
-      : []),
-  ];
-
   return (
-    <div className="min-h-screen bg-slate-100 px-3 py-4 text-slate-900 sm:px-6 sm:py-8">
-      <div className="mx-auto w-full max-w-[1280px] rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_20px_60px_rgba(15,23,42,0.08)] sm:rounded-[32px] sm:p-5">
-        <div className="rounded-xl bg-slate-50 p-3 sm:rounded-[26px] sm:p-4">
-          <header className="rounded-xl border border-slate-200 bg-white px-4 py-4 sm:rounded-[20px] sm:px-8 sm:py-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm text-slate-500">어항 이름</div>
-                <div className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">{tankName}</div>
-              </div>
-              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 sm:gap-4 sm:rounded-[18px] sm:px-4 sm:py-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white text-slate-500 sm:h-14 sm:w-14">
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 sm:h-7 sm:w-7" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path d="M20 21a8 8 0 0 0-16 0" />
-                    <circle cx="12" cy="8" r="4" />
-                  </svg>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-slate-500">사용자</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900 sm:text-base">
-                    {currentUser?.username}
-                    {currentUser?.role === 'admin' && (
-                      <span className="ml-2 rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-white">
-                        관리자
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="mt-1 text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-900"
-                  >
-                    로그아웃
-                  </button>
-                </div>
-              </div>
-            </div>
-          </header>
-
-          <nav
-            className={`mt-4 flex gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white p-2 sm:grid sm:gap-4 sm:overflow-visible sm:rounded-[20px] sm:p-3 ${
-              topMenus.length > 4 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'
-            }`}
-          >
-            {topMenus.map((menu) => (
-              <NavLink
-                key={menu.name}
-                to={menu.path}
-                className={({ isActive }) =>
-                  `flex-shrink-0 whitespace-nowrap rounded-xl px-4 py-2.5 text-center text-sm font-medium transition sm:flex-shrink sm:whitespace-normal sm:rounded-[14px] sm:px-6 sm:py-4 sm:text-base ${
-                    isActive
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`
-                }
-              >
-                {menu.name}
-              </NavLink>
-            ))}
-          </nav>
-
-          <main className="mt-4 overflow-x-hidden">
-            <Outlet />
-          </main>
+    <div className="cft-shell">
+      <aside className="cft-sidebar">
+        <NavLink to="/" className="cft-brand" aria-label="CyberFishTank 홈"><span className="cft-brand-mark"><Icon name="fish" /></span><span>CyberFishTank</span></NavLink>
+        <div className="cft-tank-summary"><div className="cft-tank-label">내 어항</div><div className="cft-tank-name">{tankName}</div></div>
+        <nav className="cft-nav" aria-label="주 메뉴">
+          {menus.map(menu => <NavLink key={menu.path} to={menu.path} end={menu.end} className={({ isActive }) => `cft-nav-link ${isActive ? 'is-active' : ''}`}><span className="cft-nav-icon"><Icon name={menu.icon} /></span><span className="cft-nav-desktop-label">{menu.name}</span><span className="cft-nav-mobile-label">{menu.mobileName}</span></NavLink>)}
+        </nav>
+        <div className="cft-sidebar-bottom">
+          {currentUser?.role === 'admin' && <NavLink to="/admin" className={({ isActive }) => `cft-nav-link cft-admin-link ${isActive ? 'is-active' : ''}`}><span className="cft-nav-icon"><Icon name="flask" /></span><span>관리자</span></NavLink>}
+          <div className="cft-user-row"><span className="cft-avatar">{currentUser?.username?.slice(0, 1).toUpperCase() || 'A'}</span><span><strong>{currentUser?.username}</strong><small>{currentUser?.role === 'admin' ? '관리자' : '사용자'}</small></span><button type="button" onClick={handleLogout} title="로그아웃" aria-label="로그아웃"><Icon name="logout" /></button></div>
         </div>
+      </aside>
+      <div className="cft-workspace">
+        <header className="cft-topbar"><button type="button" className="cft-notification" aria-label={`알림 기록 보기, ${alerts.length}개`} onClick={() => navigate('/records', { state: { tab: '알림' } })}><Icon name="bell" />{alerts.length > 0 && <i />}</button><span>{currentUser?.role === 'admin' ? '관리자' : currentUser?.username}</span></header>
+        <main className="cft-content" key={location.pathname}><Outlet /></main>
       </div>
     </div>
   );
 };
-
 export default Layout;

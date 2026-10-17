@@ -1,0 +1,33 @@
+.fish-sprite { position: relative; width: 100%; }
+.fish-sprite-canvas { position: absolute; inset: 0; }
+.fish-sprite-canvas canvas { display: block; width: 100%; height: 100%; }
+.twin-fish-anchor { position: absolute; width: 0; height: 0; }
+.twin-fish-visual { position: absolute; z-index: 10; width: clamp(120px, 17vw, 180px); transform: translate(-50%, -50%); }
+.twin-fish-orientation, .twin-fish-facing { position: relative; width: 100%; }
+.twin-tracking-status { position: absolute; z-index: 21; left: 14px; top: 14px; display: flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid #ffffff45; border-radius: 20px; background: #133d41bd; color: #f0f9f7; font-size: 11px; backdrop-filter: blur(8px); }
+.twin-tracking-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #e5c383; }
+.twin-tracking-status[data-status="tracking"]::before { background: #86dbb1; }
+.twin-fish-notice { position: absolute; z-index: 21; width: max-content; max-width: 180px; left: 0; bottom: 65px; transform: translateX(-50%); padding: 5px 9px; border-radius: 9px; background: #fff9e9; color: #725524; font-size: 11px; }
+.rig-dialog { position: fixed; inset: 0; margin: auto; width: min(960px, calc(100vw - 24px)); max-height: 92dvh; overflow: auto; padding: 24px; border: 1px solid #dce7e5; border-radius: 20px; background: #fff; color: #24474a; }
+.rig-dialog::backdrop { background: #092f3780; backdrop-filter: blur(4px); }
+.rig-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 18px; }
+.rig-heading h2 { font-size: 20px; font-weight: 700; margin: 0 0 6px; }
+.rig-heading p, .rig-hint { font-size: 12px; line-height: 1.7; color: #617c80; }
+.rig-part-tabs, .rig-controls, .rig-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.rig-part-tabs { margin-bottom: 14px; }
+.rig-part-tabs .is-selected { background: #e5f5f1; border-color: #358e86; color: #16776f; }
+.rig-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 22px; }
+.rig-checker { position: relative; width: 100%; overflow: hidden; border: 1px solid #c8d8d5; border-radius: 12px; background-color: #edf2ef; background-image: conic-gradient(#d7e3df 25%, transparent 0 50%, #d7e3df 0 75%, transparent 0); background-size: 20px 20px; }
+.rig-checker > img, .rig-checker > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rig-checker > svg { touch-action: none; cursor: crosshair; }
+.rig-checker rect { cursor: move; }
+.rig-handle { fill: #fff; stroke: currentColor; stroke-width: .006; cursor: grab; }
+.rig-hit { fill: transparent; stroke: none; cursor: grab; outline: none; }
+.rig-hit:focus + .rig-handle, .rig-checker rect:focus { outline: none; stroke: #143e4e; stroke-width: .009; }
+.rig-preview-tank { display: flex; align-items: center; justify-content: center; min-height: 210px; border-radius: 12px; margin-bottom: 14px; padding: 25px; background: radial-gradient(ellipse at 30% 0%, #7cbbaf, #22525a); }
+.rig-preview-tank .fish-sprite { width: min(100%, 260px); }
+.rig-controls { margin: 16px 0; padding-top: 15px; border-top: 1px solid #e5edeb; }
+.rig-controls label, .rig-part-tabs label { font-size: 12px; }
+.rig-controls select { padding: 8px; border: 1px solid #d5e2df; border-radius: 8px; }
+.rig-footer { position: sticky; bottom: -24px; justify-content: flex-end; margin-top: 20px; padding: 12px 0; background: white; }
+@media (max-width: 640px) { .rig-dialog { padding: 16px; } .rig-layout { grid-template-columns: 1fr; gap: 8px; } .rig-preview-tank { min-height: 150px; } .rig-preview-tank .fish-sprite { max-width: 180px; } .rig-controls > label { display: flex; width: 100%; justify-content: space-between; align-items: center; } .rig-footer { bottom: -16px; } }

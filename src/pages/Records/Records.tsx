@@ -5,6 +5,9 @@ import React, {
   useRef,
 } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import RecordChart from '../../components/RecordChart';
+import { useLocation } from 'react-router-dom';
+import { Icon, PageHeading } from '../../components/UI';
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
@@ -41,6 +44,19 @@ interface ChartData {
   label: string;
   value: number | null;
   timestamp: string;
+}
+
+interface LineChartConfig {
+  subtitle: string;
+  title: string;
+  unit: string;
+  badge: string;
+  currentValue: string;
+  data: ChartData[];
+  min: number;
+  max: number;
+  color: string;
+  valueSuffix: string;
 }
 
 type SensorKey =
@@ -83,8 +99,15 @@ const Records: React.FC = () => {
   '전체',
 ];
 
-  const [activeRecordTab, setActiveRecordTab] =
-    useState('성장 그래프');
+  const location = useLocation();
+  const [activeRecordTab, setActiveRecordTab] = useState(() => {
+    const tab = (location.state as { tab?: string } | null)?.tab;
+    return tab && recordTabs.includes(tab) ? tab : '수온 그래프';
+  });
+  useEffect(() => {
+    const tab = (location.state as { tab?: string } | null)?.tab;
+    if (tab && recordTabs.includes(tab)) setActiveRecordTab(tab);
+  }, [location.key]);
 
   const [activeRange, setActiveRange] =
     useState('1주');
@@ -98,13 +121,7 @@ const Records: React.FC = () => {
   const [alertPage, setAlertPage] =
     useState(1);
 
-  const ALERTS_PER_PAGE = 5;
-
-  const [hoveredPoint, setHoveredPoint] =
-    useState<any>(null);
-
-  const [hoveredBar, setHoveredBar] =
-    useState<any>(null);
+  const ALERTS_PER_PAGE = 10;
 
   // ======================================================
   // DB 센서 데이터
@@ -3126,7 +3143,7 @@ const activityChartData =
   // ======================================================
 
   const lineChartConfig:
-    Record<string, any> = {
+    Record<string, LineChartConfig> = {
 
     // --------------------------------------------------
     // 성장 그래프
@@ -3304,6 +3321,7 @@ const activityChartData =
   () => (
     <div
       className="
+        cft-record-ranges
         mb-4
         flex
         flex-wrap
@@ -3329,13 +3347,6 @@ const activityChartData =
                 range
               );
 
-              setHoveredPoint(
-                null
-              );
-
-              setHoveredBar(
-                null
-              );
             }}
             className={`
               rounded-full
@@ -3364,1067 +3375,59 @@ const activityChartData =
   // 선 그래프
   // ======================================================
 
-  const renderLineGraph =
-    (config: any) => {
-
-      const {
-        subtitle,
-        title,
-        unit,
-        badge,
-        currentValue,
-        data,
-        min,
-        max,
-        color,
-        valueSuffix,
-      } = config;
-
-      const points =
-        data
-          .map(
-            (
-              item: ChartData,
-              index: number
-            ) => {
-
-              if (
-                item.value === null
-              ) {
-                return null;
-              }
-
-              const x =
-                data.length === 1
-                  ? 350
-                  : 50 +
-                    (
-                      index *
-                      600
-                    ) /
-                    Math.max(
-                      data.length - 1,
-                      1
-                    );
-
-              const ratio =
-                (
-                  item.value -
-                  min
-                ) /
-                (
-                  max -
-                  min ||
-                  1
-                );
-
-              const y =
-                250 -
-                ratio *
-                  170;
-
-              return `${x},${y}`;
-            }
-          )
-          .join(' ');
-
-      return (
-
-        <div
-          className="
-            relative
-            overflow-hidden
-            rounded-[20px]
-            border
-            border-slate-200
-            bg-white
-            p-5
-          "
-        >
-
-          <div
-            className="
-              mb-4
-              flex
-              items-center
-              justify-between
-            "
-          >
-
-            <div>
-
-              <div
-                className="
-                  text-sm
-                  text-slate-500
-                "
-              >
-                {subtitle}
-              </div>
-
-              <div
-                className="
-                  text-lg
-                  font-semibold
-                  tracking-tight
-                  text-slate-900
-                  sm:text-2xl
-                "
-              >
-                {title}
-              </div>
-
-            </div>
-
-            <div
-              className="
-                rounded-full
-                border
-                border-slate-200
-                bg-slate-50
-                px-4
-                py-2
-                text-sm
-                font-medium
-                text-slate-600
-              "
-            >
-              {badge}
-            </div>
-
-          </div>
-
-          {renderRangeButtons()}
-
-          <div
-            className="
-              rounded-[18px]
-              border
-              border-slate-200
-              bg-gradient-to-b
-              from-sky-50
-              to-white
-              p-6
-            "
-          >
-
-            <div
-              className="
-                mb-4
-                flex
-                items-center
-                justify-between
-              "
-            >
-
-              <div
-                className="
-                  text-sm
-                  text-slate-600
-                "
-              >
-                {unit}
-              </div>
-
-              <div
-                className="
-                  text-sm
-                  font-medium
-                  text-slate-700
-                "
-              >
-                현재 값 {currentValue}
-              </div>
-
-            </div>
-
-            {isLoading ? (
-
-              <div
-                className="
-                  flex
-                  h-[430px]
-                  items-center
-                  justify-center
-                  rounded-[16px]
-                  border
-                  border-slate-200
-                  bg-white
-                  text-sm
-                  text-slate-500
-                "
-              >
-                DB 데이터를 불러오는 중...
-              </div>
-
-            ) : dbError ? (
-
-              <div
-                className="
-                  flex
-                  h-[430px]
-                  items-center
-                  justify-center
-                  rounded-[16px]
-                  border
-                  border-red-200
-                  bg-red-50
-                  text-sm
-                  text-red-600
-                "
-              >
-                {dbError}
-              </div>
-
-            ) : data.length === 0 ? (
-
-              <div
-                className="
-                  flex
-                  h-[430px]
-                  items-center
-                  justify-center
-                  rounded-[16px]
-                  border
-                  border-slate-200
-                  bg-white
-                  text-sm
-                  text-slate-500
-                "
-              >
-                선택한 기간에 표시할 데이터가 없습니다.
-              </div>
-
-            ) : (
-
-              <div
-                className="
-                  relative
-                  h-[430px]
-                  rounded-[16px]
-                  border
-                  border-slate-200
-                  bg-white
-                  p-4
-                "
-              >
-
-                <div
-                  className="
-                    absolute
-                    inset-x-4
-                    top-1/4
-                    border-t
-                    border-dashed
-                    border-slate-200
-                  "
-                />
-
-                <div
-                  className="
-                    absolute
-                    inset-x-4
-                    top-2/4
-                    border-t
-                    border-dashed
-                    border-slate-200
-                  "
-                />
-
-                <div
-                  className="
-                    absolute
-                    inset-x-4
-                    top-3/4
-                    border-t
-                    border-dashed
-                    border-slate-200
-                  "
-                />
-
-                <svg
-                  viewBox="0 0 700 300"
-                  className="
-                    h-full
-                    w-full
-                    overflow-visible
-                  "
-                  preserveAspectRatio="none"
-                >
-
-                  <polyline
-                    fill="none"
-                    stroke={color}
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    points={points}
-                  />
-
-                  {data.map(
-                    (
-                      item: ChartData,
-                      index: number
-                    ) => {
-
-                      if (
-                        item.value === null
-                      ) {
-                        return null;
-                      }
-
-                      const x =
-                        data.length === 1
-                          ? 350
-                          : 50 +
-                            (
-                              index *
-                              600
-                            ) /
-                            Math.max(
-                              data.length - 1,
-                              1
-                            );
-
-                      const ratio =
-                        (
-                          item.value -
-                          min
-                        ) /
-                        (
-                          max -
-                          min ||
-                          1
-                        );
-
-                      const y =
-                        250 -
-                        ratio *
-                          170;
-
-                      const isActive =
-                        hoveredPoint?.type ===
-                          title &&
-                        hoveredPoint?.index ===
-                          index;
-
-                      return (
-
-                        <g
-                          key={`${item.timestamp}-${index}`}
-                        >
-
-                          <circle
-                            cx={x}
-                            cy={y}
-                            r={
-                              isActive
-                                ? 8
-                                : 6
-                            }
-                            fill={color}
-                            onMouseEnter={() =>
-                              setHoveredPoint({
-                                type:
-                                  title,
-
-                                index,
-
-                                label:
-                                  item.label,
-
-                                value:
-                                  `${item.value}${valueSuffix}`,
-
-                                x,
-                                y,
-                              })
-                            }
-                            onMouseLeave={() =>
-                              setHoveredPoint(
-                                null
-                              )
-                            }
-                            style={{
-                              cursor:
-                                'pointer',
-                            }}
-                          />
-
-                          <text
-                            x={x}
-                            y={278}
-                            textAnchor="middle"
-                            fontSize="13"
-                            fill="#64748b"
-                          >
-                            {item.label}
-                          </text>
-
-                        </g>
-                      );
-                    }
-                  )}
-
-                </svg>
-
-                {hoveredPoint?.type ===
-                  title && (
-
-                  <div
-                    className="
-                      pointer-events-none
-                      absolute
-                      z-10
-                      rounded-xl
-                      border
-                      border-slate-200
-                      bg-white
-                      px-3
-                      py-2
-                      text-xs
-                      shadow-lg
-                    "
-                    style={{
-                      left:
-                        `${Math.min(
-                          Math.max(
-                            (
-                              hoveredPoint.x /
-                              700
-                            ) *
-                              100,
-                            8
-                          ),
-                          86
-                        )}%`,
-
-                      top:
-                        `${Math.min(
-                          Math.max(
-                            (
-                              hoveredPoint.y /
-                              300
-                            ) *
-                              100 -
-                              8,
-                            4
-                          ),
-                          78
-                        )}%`,
-
-                      transform:
-                        'translate(-50%, -100%)',
-                    }}
-                  >
-
-                    <div
-                      className="
-                        font-semibold
-                        text-slate-900
-                      "
-                    >
-                      {hoveredPoint.label}
-                    </div>
-
-                    <div
-                      className="
-                        text-slate-500
-                      "
-                    >
-                      {hoveredPoint.value}
-                    </div>
-
-                  </div>
-                )}
-
-              </div>
-            )}
-
-          </div>
-
-        </div>
-      );
-    };
-
-  // ======================================================
-  // 활동량 그래프
-  //
-  // 기존 코드 유지
-  // ======================================================
-
-  const renderBarGraph =
-    () => (
-
-      <div
-        className="
-          rounded-[20px]
-          border
-          border-slate-200
-          bg-white
-          p-5
-        "
-      >
-
-        <div
-          className="
-            mb-4
-            flex
-            items-center
-            justify-between
-          "
-        >
-
-          <div>
-
-            <div
-              className="
-                text-sm
-                text-slate-500
-              "
-            >
-              활동량 기록
-            </div>
-
-            <div
-              className="
-                text-lg
-                font-semibold
-                tracking-tight
-                text-slate-900
-                sm:text-2xl
-              "
-            >
-              활동량 그래프
-            </div>
-
-          </div>
-
-          <div
-            className="
-              mb-4
-              text-sm
-              text-slate-500
-            "
-          >
-            일일 총 이동거리(cm)
-          </div>
-
-          <div
-            className="
-              rounded-full
-              border
-              border-slate-200
-              bg-slate-50
-              px-4
-              py-2
-              text-sm
-              font-medium
-              text-slate-600
-            "
-          >
-            {activeRange}
-          </div>
-
-        </div>
-
+  const renderLineGraph = (config: LineChartConfig) => {
+    const { subtitle, title, unit, badge, currentValue, data, min, max, color, valueSuffix } = config;
+
+    return (
+      <section className="cft-panel cft-record-panel">
+        <div className="cft-panel-heading cft-record-panel-header"><div><h2>{title}</h2><p className="cft-caption">{subtitle} · {unit}</p></div><div className="cft-record-current"><strong>{currentValue}</strong><span>{badge}</span></div></div>
         {renderRangeButtons()}
-
-        <div
-          className="
-            rounded-[18px]
-            border
-            border-slate-200
-            bg-slate-50
-            p-6
-          "
-        >
-
-          <div
-            className="
-              relative
-              flex
-              h-[430px]
-              items-end
-              justify-between
-              gap-3
-              overflow-x-auto
-              rounded-[16px]
-              border
-              border-slate-200
-              bg-white
-              p-6
-            "
-          >
-
-            {activityChartData.map(
-              (
-                item,
-                index
-              ) => {
-
-                const maxActivityValue =
-                  Math.max(
-                    ...activityChartData.map(
-                      chartItem =>
-                        chartItem.value ?? 0
-                    ),
-                    1
-                  );
-
-                const height =
-                  Math.max(
-                    60,
-                    (item.value /
-                      maxActivityValue) *
-                      320
-                  );
-
-                const isActive =
-                  hoveredBar?.index ===
-                  index;
-
-                return (
-
-                  <div
-                    key={item.label}
-                    className="
-                      flex
-                      flex-1
-                      min-w-[46px]
-                      flex-shrink-0
-                      flex-col
-                      items-center
-                      justify-end
-                      gap-3
-                    "
-                  >
-
-                    <div
-                      className={`
-                        relative
-                        w-full
-                        max-w-[64px]
-                        rounded-t-[14px]
-                        transition
-                        ${
-                          isActive
-                            ? 'bg-slate-700'
-                            : 'bg-slate-900/85'
-                        }
-                      `}
-                      style={{
-                        height:
-                          `${height}px`,
-                      }}
-                      onMouseEnter={() =>
-                        setHoveredBar({
-                          index,
-                          label:
-                            item.label,
-                          value:
-                            `${item.value} cm`,
-                        })
-                      }
-                      onMouseLeave={() =>
-                        setHoveredBar(
-                          null
-                        )
-                      }
-                    >
-
-                      {isActive && (
-
-                        <div
-                          className="
-                            absolute
-                            left-1/2
-                            top-0
-                            -translate-x-1/2
-                            -translate-y-[calc(100%+8px)]
-                            rounded-xl
-                            border
-                            border-slate-200
-                            bg-white
-                            px-3
-                            py-2
-                            text-xs
-                            shadow-lg
-                          "
-                        >
-
-                          <div
-                            className="
-                              font-semibold
-                              text-slate-900
-                            "
-                          >
-                            {item.label}
-                          </div>
-
-                          <div
-                            className="
-                              text-slate-500
-                            "
-                          >
-                            {item.value}
-                          </div>
-
-                        </div>
-                      )}
-
-                    </div>
-
-                    <div
-                      className="
-                        whitespace-nowrap
-                        text-xs
-                        text-slate-500
-                        sm:text-sm
-                      "
-                    >
-                      {item.label}
-                    </div>
-
-                  </div>
-                );
-              }
-            )}
-
-          </div>
-
+        <div className="cft-record-chart-surface">
+          {isLoading ? <div className="cft-record-chart-message">데이터를 불러오는 중...</div>
+            : dbError ? <div role="alert" className="cft-record-chart-message cft-error">{dbError}</div>
+            : !data.some((point: ChartData) => point.value !== null) ? <div className="cft-record-chart-message">선택한 기간에 표시할 데이터가 없습니다.</div>
+            : <RecordChart key={`${title}-${activeRange}`} data={data} title={title} min={min} max={max} color="#148e98" valueSuffix={valueSuffix} />}
         </div>
-
-      </div>
+      </section>
     );
+  };
 
-  // ======================================================
-  // 알림 패널
-  //
-  // 위험도 표시 제거
-  // ======================================================
-
-  const renderAlertPanel =
-    () => (
-
-      <div
-        className="
-          rounded-[20px]
-          border
-          border-slate-200
-          bg-white
-          p-5
-        "
-      >
-
-        <div
-          className="
-            mb-4
-            flex
-            items-center
-            justify-between
-          "
-        >
-
-          <div>
-
-            <div
-              className="
-                text-sm
-                text-slate-500
-              "
-            >
-              센서 이벤트 및 알림 기록
-            </div>
-
-            <div
-              className="
-                text-lg
-                font-semibold
-                tracking-tight
-                text-slate-900
-                sm:text-2xl
-              "
-            >
-              알림 목록
-            </div>
-
-          </div>
-
-          <div
-            className="
-              rounded-full
-              border
-              border-slate-200
-              bg-slate-50
-              px-4
-              py-2
-              text-sm
-              font-medium
-              text-slate-600
-            "
-          >
-            {alertCategory} · {alertSort}
-          </div>
-
+  // 활동량도 고정 막대 너비 대신 컨테이너 너비에 맞춰 모든 값을 표시한다.
+  const renderBarGraph = () => (
+    <section className="cft-record-panel rounded-[20px] border border-slate-200 bg-white p-5">
+      <div className="cft-record-panel-header mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm text-slate-500">활동량 기록</div>
+          <div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">활동량 그래프</div>
         </div>
-
-        <div className="mb-3 text-sm font-medium text-slate-700">알림 범주</div>
-
-        <div className="mb-4 flex flex-wrap gap-2">
-          {['전체', '수온', 'pH', '수위', '수질', '이상 행동', '기타'].map(category => (
-            <button
-              key={category}
-              type="button"
-              onClick={() => {
-                setAlertCategory(category);
-                setAlertPage(1);
-              }}
-              className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                alertCategory === category
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              {category}
-            </button>
-          ))}
+        <div className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-600">
+          {activeRange}
         </div>
-
-        <div className="mb-3 text-sm font-medium text-slate-700">정렬</div>
-
-        <div
-          className="
-            mb-4
-            flex
-            flex-wrap
-            gap-2
-          "
-        >
-
-          {[
-            '최신',
-            '오래된 순',
-          ].map(
-            sort => (
-
-              <button
-                key={sort}
-                onClick={() =>
-                  {
-                    setAlertSort(sort);
-                    setAlertPage(1);
-                  }
-                }
-                className={`
-                  rounded-full
-                  border
-                  px-3
-                  py-1.5
-                  text-sm
-                  transition
-                  ${
-                    alertSort === sort
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                  }
-                `}
-              >
-                {sort}
-              </button>
-
-            )
-          )}
-
-        </div>
-
-        <div
-          className="
-            space-y-2
-            rounded-[18px]
-            border
-            border-slate-200
-            bg-slate-50
-            p-3
-          "
-        >
-
-          {sortedAlerts.length === 0 ? (
-
-            <div
-              className="
-                rounded-[16px]
-                border
-                border-slate-200
-                bg-white
-                p-8
-                text-center
-                text-sm
-                text-slate-500
-              "
-            >
-              최근 1주일 내 발생한 알림이 없습니다.
-            </div>
-
-          ) : (
-
-            pagedAlerts.map(
-              alert => (
-
-                <div
-                  key={alert.id}
-                  className="
-                    rounded-[16px]
-                    border
-                    border-slate-200
-                    bg-white
-                    p-3
-                  "
-                >
-
-                  {/* ----------------------------------
-                      제목
-                      ---------------------------------- */}
-
-                  <div
-                    className="
-                      font-semibold
-                      text-slate-900
-                    "
-                  >
-                    {alert.title}
-                  </div>
-
-                  {/* ----------------------------------
-                      이벤트 발생 날짜 / 시간
-                      ---------------------------------- */}
-
-                  <div
-                    className="
-                      mt-1
-                      text-xs
-                      text-slate-500
-                    "
-                  >
-                    {alert.time}
-                  </div>
-
-                  {/* ----------------------------------
-                      알림 내용
-                      ---------------------------------- */}
-
-                  <div
-                    className="
-                      mt-2
-                      text-sm
-                      leading-5
-                      text-slate-700
-                    "
-                  >
-                    {alert.detail}
-                  </div>
-
-                </div>
-
-              )
-            )
-
-          )}
-
-        </div>
-
-        {sortedAlerts.length > 0 && (
-
-          <div
-            className="
-              mt-4
-              flex
-              items-center
-              justify-between
-              gap-3
-            "
-          >
-
-            <div
-              className="
-                text-sm
-                text-slate-500
-              "
-            >
-              {currentAlertPage} / {alertPageCount} 페이지
-            </div>
-
-            <div
-              className="
-                flex
-                gap-2
-              "
-            >
-
-              <button
-                type="button"
-                disabled={currentAlertPage === 1}
-                onClick={() =>
-                  setAlertPage(
-                    currentAlertPage - 1
-                  )
-                }
-                className="
-                  rounded-full
-                  border
-                  border-slate-200
-                  bg-white
-                  px-3
-                  py-1.5
-                  text-sm
-                  text-slate-600
-                  transition
-                  hover:border-slate-300
-                  hover:bg-slate-50
-                  disabled:cursor-not-allowed
-                  disabled:opacity-40
-                "
-              >
-                이전
-              </button>
-
-              <button
-                type="button"
-                disabled={
-                  currentAlertPage ===
-                  alertPageCount
-                }
-                onClick={() =>
-                  setAlertPage(
-                    currentAlertPage + 1
-                  )
-                }
-                className="
-                  rounded-full
-                  border
-                  border-slate-200
-                  bg-white
-                  px-3
-                  py-1.5
-                  text-sm
-                  text-slate-600
-                  transition
-                  hover:border-slate-300
-                  hover:bg-slate-50
-                  disabled:cursor-not-allowed
-                  disabled:opacity-40
-                "
-              >
-                다음
-              </button>
-
-            </div>
-
-          </div>
+      </div>
+      {renderRangeButtons()}
+      <div className="cft-record-chart-surface rounded-[18px] border border-slate-200 bg-slate-50 p-6">
+        <div className="mb-4 text-sm text-slate-600">일일 총 이동거리(cm)</div>
+        {activityChartData.some((point) => point.value !== null) ? (
+          <RecordChart key={`activity-${activeRange}`} data={activityChartData} title="활동량 그래프"
+            min={0} max={Math.max(1, ...activityChartData.map((point) => point.value ?? 0))}
+            color="#0b898c" valueSuffix=" cm" variant="bar" />
+        ) : (
+          <div className="cft-record-chart-message text-sm text-slate-500">선택한 기간에 표시할 데이터가 없습니다.</div>
         )}
-
       </div>
-    );
+    </section>
+  );
+
+  // 알림 패널
+
+  const renderAlertPanel = () => (
+    <section className="cft-panel cft-alert-panel">
+      <div className="cft-panel-heading"><h2>알림 기록</h2><select className="cft-select" aria-label="알림 정렬" value={alertSort} onChange={event => { setAlertSort(event.target.value); setAlertPage(1); }}><option value="최신">최신순 ↓</option><option value="오래된 순">오래된 순 ↑</option></select></div>
+      <div className="cft-tabs cft-alert-filters" aria-label="알림 범주">{['전체', '수온', 'pH', '수위', '수질', '이상 행동', '기타'].map(category => <button key={category} aria-pressed={alertCategory === category} className={alertCategory === category ? 'is-active' : ''} onClick={() => { setAlertCategory(category); setAlertPage(1); }}>{category}</button>)}</div>
+      <div className="cft-alert-list">{sortedAlerts.length === 0 ? <div className="cft-empty">최근 1주일 내 발생한 알림이 없습니다.</div> : pagedAlerts.map(alert => <div className="cft-alert-row" key={alert.id}><span className="cft-alert-icon"><Icon name="bell" /></span><div><strong>{alert.title}</strong><p>{alert.detail}</p></div><time>{alert.time}</time></div>)}</div>
+      {sortedAlerts.length > 0 && <div className="cft-pagination"><span>{currentAlertPage} / {alertPageCount} 페이지</span><div><button className="cft-button" disabled={currentAlertPage === 1} onClick={() => setAlertPage(currentAlertPage - 1)}>이전</button><button className="cft-button" disabled={currentAlertPage === alertPageCount} onClick={() => setAlertPage(currentAlertPage + 1)}>다음</button></div></div>}
+    </section>
+  );
 
   // ======================================================
   // 메인 콘텐츠
@@ -4454,151 +3457,12 @@ const activityChartData =
       );
     };
 
-  // ======================================================
-  // 화면
-  // ======================================================
-
   return (
-
-    <div
-      className="
-        grid
-        grid-cols-1
-        gap-4
-        sm:grid-cols-[220px_minmax(0,1fr)]
-      "
-    >
-
-      {/* ==================================================
-          왼쪽 메뉴
-          ================================================== */}
-
-      <aside
-        className="
-          order-2
-          rounded-[20px]
-          border
-          border-slate-200
-          bg-white
-          p-4
-          sm:order-none
-        "
-      >
-
-        <div
-          className="
-            rounded-[18px]
-            border
-            border-slate-200
-            bg-slate-50
-            p-4
-          "
-        >
-
-          <div
-            className="
-              mb-3
-              text-sm
-              font-semibold
-              text-slate-500
-            "
-          >
-            기록 메뉴
-          </div>
-
-          <div
-            className="
-              flex
-              gap-2
-              overflow-x-auto
-              sm:block
-              sm:space-y-3
-              sm:overflow-visible
-            "
-          >
-
-            {recordTabs.map(
-              tab => (
-
-                <button
-                  key={tab}
-                  onClick={() => {
-
-                    setActiveRecordTab(
-                      tab
-                    );
-
-                    // 성장/활동량 그래프에서는
-                    // 1일 기준을 사용하지 않음
-                    if (
-                      (
-                        tab === '성장 그래프' ||
-                        tab === '활동량 그래프'
-                      ) &&
-                      activeRange === '1일'
-                    ) {
-                      setActiveRange(
-                        '1주'
-                      );
-                    }
-
-                    setHoveredPoint(
-                      null
-                    );
-
-                    setHoveredBar(
-                      null
-                    );
-                  }}
-                  className={`
-                    flex-shrink-0
-                    whitespace-nowrap
-                    rounded-[14px]
-                    border
-                    px-4
-                    py-2.5
-                    text-left
-                    text-sm
-                    font-medium
-                    transition
-                    sm:w-full
-                    sm:flex-shrink
-                    sm:whitespace-normal
-                    sm:py-4
-                    ${
-                      activeRecordTab ===
-                      tab
-                        ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                    }
-                  `}
-                >
-                  {tab}
-                </button>
-
-              )
-            )}
-
-          </div>
-
-        </div>
-
-      </aside>
-
-      {/* ==================================================
-          오른쪽 콘텐츠
-          ================================================== */}
-
-      <div
-        className="
-          space-y-4
-        "
-      >
-        {renderRecordMainContent()}
-      </div>
-
+    <div className="cft-records-page">
+      <PageHeading title="어항 기록" description="변화를 살펴보고 더 건강한 어항을 관리하세요." />
+      <nav className="cft-tabs cft-record-tabs" aria-label="기록 종류">{recordTabs.map(tab => <button key={tab} aria-pressed={activeRecordTab === tab} className={activeRecordTab === tab ? 'is-active' : ''} onClick={() => { setActiveRecordTab(tab); if ((tab === '성장 그래프' || tab === '활동량 그래프') && activeRange === '1일') setActiveRange('1주'); }}>{tab.replace(' 그래프', '')}</button>)}</nav>
+      <div className="cft-records-content">{renderRecordMainContent()}</div>
     </div>
   );
 };
-
 export default Records;

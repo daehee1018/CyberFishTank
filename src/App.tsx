@@ -9,7 +9,7 @@ import Login from './pages/Login/Login';
 import Signup from './pages/Login/Signup';
 import FishSelect from './pages/FishSelect/FishSelect';
 import CameraSetup from './pages/CameraSetup/CameraSetup';
-import AdminTest from './pages/AdminTest/AdminTest';
+import Admin from './pages/Admin/Admin';
 import { useAppContext } from './context/AppContext';
 
 function RequireAuth() {
@@ -92,9 +92,11 @@ export default function App() {
             />
 
             <Route
-              path="admin-test"
-              element={<AdminTest />}
+              path="admin"
+              element={<Admin />}
             />
+
+            <Route path="admin-test" element={<Navigate to="/admin" replace />} />
 
           </Route>
 

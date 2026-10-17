@@ -1,6 +1,7 @@
 // src/components/FishSettings.tsx
 import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
+import RigEditor from './RigEditor';
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
@@ -28,6 +29,7 @@ export default function FishSettings() {
   // ============================================================
 
   const [graphics, setGraphics] = useState<FishGraphic[]>([]);
+  const [editingRigId, setEditingRigId] = useState<number | null>(null);
   const [graphicsLoading, setGraphicsLoading] = useState(true);
   const [switchingId, setSwitchingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -52,8 +54,10 @@ export default function FishSettings() {
   };
 
   useEffect(() => {
+    setEditingRigId(null);
+    setGraphics([]);
     loadGraphics();
-  }, []);
+  }, [currentUser?.id]);
 
   const handleSelectGraphic = async (graphicId: number) => {
     setSwitchingId(graphicId);
@@ -311,7 +315,7 @@ export default function FishSettings() {
     <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.02)]">
 
       <h3 className="text-base font-semibold text-slate-900 mb-1">
-        🧬 실시간 수중 개체 디지털 트윈 등록
+        물고기 그래픽 만들기
       </h3>
 
       <p className="text-xs text-slate-500 mb-4">
@@ -576,6 +580,8 @@ export default function FishSettings() {
                     })}
                   </div>
 
+                  <button type="button" className="cft-button mt-2 w-full" onClick={event => { event.stopPropagation(); setEditingRigId(graphic.id); }}>움직임 설정</button>
+
                   {isActive && (
                     <div className="absolute right-1.5 top-1.5 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-medium text-white">
                       사용중
@@ -608,6 +614,7 @@ export default function FishSettings() {
         </div>
       )}
 
+      {editingRigId !== null && <RigEditor key={editingRigId} graphicId={editingRigId} onClose={() => setEditingRigId(null)} />}
     </div>
   );
 }

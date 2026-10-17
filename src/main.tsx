@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import "./desktop.css";
 import { AppProvider } from "./context/AppContext";
 
 // 설치 가능한 웹앱(PWA)이 되려면 서비스 워커 등록이 필요하다.

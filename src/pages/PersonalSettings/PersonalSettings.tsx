@@ -2,13 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import FishSettings from '../../components/FishSettings';
 import FishAppearance from '../../components/FishAppearance';
+import SensorSettings from '../../components/SensorSettings';
 import TankTheme from '../../components/TankTheme';
 import type { AquariumDecorationType } from '../../context/AppContext';
 import Aquarium from '../../components/Aquarium';
-
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  'https://ggnu.site';
+import { Fish2D } from '../../components/Fish2D';
+import { Icon, PageHeading } from '../../components/UI';
 
 const PersonalSettings: React.FC = () => {
   const {
@@ -17,64 +16,14 @@ const PersonalSettings: React.FC = () => {
     setControlNotice,
     tankTheme,
     substrateColor,
+    fishData,
+    controlNotice,
   } = useAppContext();
+
+  const [activeTab, setActiveTab] = useState('어항 커스터마이징');
 
   const [selectedDecorationId, setSelectedDecorationId] =
     useState<string | null>(null);
-
-  const [sensorKey, setSensorKey] = useState<string | null>(null);
-  const [sensorKeyLoading, setSensorKeyLoading] = useState(true);
-  const [sensorKeyCopied, setSensorKeyCopied] = useState(false);
-
-  useEffect(() => {
-    const loadSensorKey = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/api/sensor-key`, {
-          credentials: 'include',
-        });
-        const data = await response.json();
-        if (data?.success) {
-          setSensorKey(data.sensorKey);
-        }
-      } catch (error) {
-        console.error('❌ 센서 키 조회 실패:', error);
-      } finally {
-        setSensorKeyLoading(false);
-      }
-    };
-
-    loadSensorKey();
-  }, []);
-
-  const rotateSensorKey = async () => {
-    if (!window.confirm('키를 재발급하면 기존 키를 쓰던 센서 장치는 다시 설정해야 합니다. 계속할까요?')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_BASE}/api/sensor-key/rotate`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const data = await response.json();
-      if (data?.success) {
-        setSensorKey(data.sensorKey);
-      }
-    } catch (error) {
-      console.error('❌ 센서 키 재발급 실패:', error);
-    }
-  };
-
-  const copySensorKey = async () => {
-    if (!sensorKey) return;
-    try {
-      await navigator.clipboard.writeText(sensorKey);
-      setSensorKeyCopied(true);
-      window.setTimeout(() => setSensorKeyCopied(false), 2000);
-    } catch (error) {
-      console.error('❌ 클립보드 복사 실패:', error);
-    }
-  };
 
   const previewRef =
     useRef<HTMLDivElement>(null);
@@ -99,6 +48,7 @@ const PersonalSettings: React.FC = () => {
     const handleKeyDown = (
       event: KeyboardEvent
     ) => {
+      if (event.target instanceof HTMLElement && (event.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName))) return;
       if (
         selectedDecorationId &&
         (event.key === 'Delete' ||
@@ -127,6 +77,8 @@ const PersonalSettings: React.FC = () => {
     src: string;
     sway?: boolean;
   }[] = [
+    { type: 'structure', label: '자연 유목과 바위', src: '/assets/aquarium/natural/driftwood-v1.webp' },
+    { type: 'plant', label: '자연 수초 군락', src: '/assets/aquarium/natural/plant-v1.webp', sway: true },
     { type: 'plant', label: '아누비아스', src: '/assets/aquarium/plants/plant_anubias_01.png', sway: true },
     { type: 'plant', label: '발리스네리아', src: '/assets/aquarium/plants/plant_vallisneria_01.png', sway: true },
     { type: 'plant', label: '붉은 줄기 수초', src: '/assets/aquarium/plants/plant_rotala_red_01.png', sway: true },
@@ -157,6 +109,7 @@ const PersonalSettings: React.FC = () => {
         width: option.type === 'plant' ? 24 : 20,
         height: option.type === 'plant' ? 34 : 24,
         sway: option.sway ?? false,
+        layer: 'back',
       },
     ]);
 
@@ -383,37 +336,12 @@ const PersonalSettings: React.FC = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="hidden rounded-[20px] border border-slate-200 bg-white p-4 sm:block">
-        <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-3 text-sm font-semibold text-slate-500">개인 설정</div>
-          <div className="space-y-3">
-            <div className="rounded-[14px] border border-slate-900 bg-slate-900 p-4 text-sm font-semibold text-white">물고기 그래픽</div>
-            <div className="rounded-[14px] border border-slate-200 bg-white p-4 text-sm text-slate-600">어항 커스터마이징</div>
-          </div>
-        </div>
-      </aside>
-      <div className="space-y-4">
-        <section>
-          <div className="mb-4">
-            <div className="text-sm text-slate-500">디지털 트윈 개인 설정</div>
-            <div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">물고기 그래픽 생성</div>
-          </div>
-          <FishSettings />
-        </section>
-        <section>
-          <FishAppearance />
-        </section>
-        <section className="rounded-[20px] border border-slate-200 bg-white p-5">
-          <div className="mb-4">
-            <div className="text-sm text-slate-500">어항 개인 설정</div>
-            <div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">어항 커스터마이징</div>
-            <div className="mt-2 text-sm leading-6 text-slate-600">어항 안의 요소를 직접 드래그하고 크기를 조절합니다.</div>
-          </div>
-
-          <TankTheme />
-
-          <div className="space-y-4">
+    <div className="cft-customize-page">
+      <PageHeading title="나만의 어항 꾸미기" description="물고기와 어항에 나만의 취향을 더해보세요." />
+      {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
+      <nav className="cft-tabs" aria-label="꾸미기 메뉴">{['어항 커스터마이징', '물고기 그래픽', '센서 연동'].map(tab => <button key={tab} aria-pressed={activeTab === tab} className={activeTab === tab ? 'is-active' : ''} onClick={() => setActiveTab(tab)}>{tab}</button>)}</nav>
+      <div className={`cft-customize-grid ${activeTab === '물고기 그래픽' ? 'is-graphics' : activeTab === '센서 연동' ? 'is-sensor' : ''}`}>
+        <section className="cft-panel cft-editor-panel" hidden={activeTab === '센서 연동'}><div className="cft-panel-heading"><h2>어항 미리보기</h2><span className="cft-caption">실시간 반영</span></div>
             <div
               ref={previewRef}
               onDragOver={event => event.preventDefault()}
@@ -421,10 +349,10 @@ const PersonalSettings: React.FC = () => {
               onPointerMove={handlePreviewPointerDown}
               onPointerUp={stopDragging}
               onPointerLeave={stopDragging}
-              className="relative h-[280px] touch-none overflow-hidden rounded-[16px] border border-slate-200 bg-sky-100 sm:h-[420px]"
+              className="cft-editor-aquarium relative touch-none overflow-hidden"
             >
-              <Aquarium showFish={false} theme={tankTheme} substrateColor={substrateColor} />
-              <div className="absolute inset-0 z-10">
+              <Aquarium variant="soft" showFish={false} decorations={aquariumDecorations} theme={tankTheme} substrateColor={substrateColor}><Fish2D {...fishData} /></Aquarium>
+              <div className="absolute inset-0 z-20 pointer-events-none">
                 {aquariumDecorations.map(decoration => {
                   const isSelected =
                     selectedDecorationId === decoration.id;
@@ -439,6 +367,7 @@ const PersonalSettings: React.FC = () => {
                         width: `${decoration.width ?? 22}%`,
                         height: `${decoration.height ?? 22}%`,
                         transform: 'translate(-50%, -100%)',
+                        pointerEvents: 'auto',
                       }}
                     >
                       <img
@@ -446,7 +375,7 @@ const PersonalSettings: React.FC = () => {
                         alt=""
                         onPointerDown={event => beginDragging(event, decoration.id)}
                         onClick={() => setSelectedDecorationId(decoration.id)}
-                        className="h-full w-full cursor-grab object-contain active:cursor-grabbing"
+                        className="h-full w-full cursor-grab object-contain object-bottom opacity-0 active:cursor-grabbing"
                       />
                       {isSelected && (
                         <>
@@ -488,16 +417,45 @@ const PersonalSettings: React.FC = () => {
                   );
                 })}
               </div>
-              {aquariumDecorations.length === 0 && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center text-sm text-slate-600">
-                  오른쪽 목록에서 장식물을 추가하세요.
-                </div>
-              )}
             </div>
+          <div className="cft-editor-hint"><Icon name="pen" />장식물을 드래그해 위치와 크기를 조절하세요.</div><div className="cft-editor-footer"><span>추가 장식 {aquariumDecorations.length}개</span><span>{tankTheme === 'default' ? '자연 어항' : tankTheme}</span></div>
+        </section>
+        <aside className="cft-panel cft-style-panel" hidden={activeTab !== '어항 커스터마이징'}><div className="cft-panel-heading"><h2>어항 스타일</h2></div><TankTheme />
+
+            {aquariumDecorations.length > 0 && <label className="cft-field">장식 선택
+              <select aria-label="장식 선택" value={selectedDecorationId ?? ''} onChange={event => setSelectedDecorationId(event.target.value || null)}>
+                <option value="">편집할 장식을 선택하세요</option>
+                {aquariumDecorations.map((decoration, index) => <option key={decoration.id} value={decoration.id}>{index + 1}. {decorationOptions.find(option => option.src === decoration.src)?.label ?? '장식'}</option>)}
+              </select>
+            </label>}
+
+            {selectedDecoration && <div className="cft-decoration-controls">
+              <label className="cft-field">장식 레이어
+                <select aria-label="장식 레이어" value={selectedDecoration.layer ?? 'back'} onChange={event => updateSelectedDecoration({ layer: event.target.value as 'back' | 'front' })}>
+                  <option value="back">후경 · 물고기 뒤</option>
+                  <option value="front">전경 · 물고기 앞</option>
+                </select>
+              </label>
+              <p className="cft-caption">전경 장식은 가장자리에 작게 배치해 주세요.</p>
+              <label className="cft-field">가로 위치
+                <input type="range" min="0" max="100" value={selectedDecoration.x} onChange={event => updateSelectedDecoration({ x: Number(event.target.value) })} />
+              </label>
+              <label className="cft-field">세로 위치
+                <input type="range" min="15" max="100" value={selectedDecoration.y} onChange={event => updateSelectedDecoration({ y: Number(event.target.value) })} />
+              </label>
+              <label className="cft-field">크기
+                <input type="range" min="8" max="50" value={selectedDecoration.width ?? 22} onChange={event => {
+                  const width = Number(event.target.value);
+                  updateSelectedDecoration({ width, height: Math.min(60, width * (selectedDecoration.height ?? 22) / (selectedDecoration.width ?? 22)) });
+                }} />
+              </label>
+              <button type="button" className="cft-button" onClick={removeSelectedDecoration}>선택한 장식 삭제</button>
+            </div>}
+
 
             <div className="space-y-3">
               <div className="text-sm font-semibold text-slate-800">장식물 추가</div>
-              <div className="flex gap-3 overflow-x-auto pb-2">
+              <div className="cft-decoration-grid">
                 {decorationOptions.map(option => (
                   <button
                     key={option.src}
@@ -510,54 +468,21 @@ const PersonalSettings: React.FC = () => {
                     }}
                     onDragEnd={() => setDraggedOptionSrc(null)}
                     onClick={() => addDecoration(option)}
-                    className="w-[112px] flex-none rounded-[12px] border border-slate-200 bg-slate-50 p-2 text-left transition hover:border-slate-400 hover:bg-white"
+                    className="cft-decoration-option"
                   >
-                    <img src={assetPreviewSrc(option.src)} alt="" className="h-14 w-full object-contain" />
-                    <span className="mt-1 block truncate text-[11px] font-medium text-slate-700">{option.label}</span>
+
+                    <span className="text-xs">{option.label}</span>
                   </button>
                 ))}
               </div>
             </div>
-          </div>
-
-          <div className="mt-4 text-sm text-slate-500">현재 배치 {aquariumDecorations.length}개</div>
-
-        </section>
-
-        <section className="rounded-[20px] border border-slate-200 bg-white p-5">
-          <div className="text-sm text-slate-500">개인 설정</div>
-          <div className="text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">
-            내 센서 연동
-          </div>
-          <p className="mt-2 text-sm text-slate-500">
-            RP2040 같은 본인 센서 하드웨어가 있다면, 아래 키를 그 장치의 설정에 넣어주세요.
-            이 키로 보낸 센서 데이터는 이 계정에만 저장되고 표시됩니다.
-          </p>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-3">
-            <code className="flex-1 break-all text-sm text-slate-700">
-              {sensorKeyLoading ? '불러오는 중...' : sensorKey}
-            </code>
-            <button
-              type="button"
-              onClick={copySensorKey}
-              disabled={!sensorKey}
-              className="rounded-[10px] bg-slate-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:opacity-40"
-            >
-              {sensorKeyCopied ? '복사됨' : '복사'}
-            </button>
-            <button
-              type="button"
-              onClick={rotateSensorKey}
-              className="rounded-[10px] border border-red-200 px-4 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50"
-            >
-              재발급
-            </button>
-          </div>
-        </section>
+          <p className="cft-caption">장식 추가 · 이동 · 크기 조절 · 선택 후 Delete로 삭제</p>
+        </aside>
+        <section className="cft-graphics-panel" hidden={activeTab !== '물고기 그래픽'}><FishSettings /></section>
+        <section className="cft-appearance-panel" hidden={activeTab !== '물고기 그래픽'}><FishAppearance /></section>
+        {activeTab === '센서 연동' && <SensorSettings />}
       </div>
     </div>
   );
 };
-
 export default PersonalSettings;

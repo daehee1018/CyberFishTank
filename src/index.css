@@ -1,11 +1,150 @@
 @import "tailwindcss";
 
-.aquarium-decoration {
-	position: absolute;
-	z-index: 1;
-	object-fit: contain;
-	pointer-events: none;
-	transform: translate(-50%, -100%);
+@theme {
+  --color-teal-50: #edfafa;
+  --color-teal-100: #d8f2f1;
+  --color-teal-600: #0c8d90;
+  --color-teal-700: #087477;
+  --color-slate-50: #f7faf9;
+  --color-slate-100: #f0f6f5;
+  --color-slate-200: #e0eae8;
+  --color-slate-500: #78908f;
+  --color-slate-600: #587170;
+  --color-slate-900: #25494b;
+}
+
+:root { font-family: Inter, Pretendard, ui-sans-serif, system-ui, sans-serif; color: #29494b; background: #f1f7f6; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { margin: 0; min-width: 320px; background: #f1f7f6; text-rendering: optimizeLegibility; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+
+.cft-shell { min-height: 100vh; display: flex; background: #f1f7f6; }
+.cft-sidebar { position: fixed; inset: 0 auto 0 0; display: flex; width: 218px; flex-direction: column; border-right: 1px solid #e2ecea; background: #fff; padding: 23px 14px 16px; }
+.cft-brand { display: flex; align-items: center; gap: 7px; padding: 0 4px; color: #245154; font-size: 14px; font-weight: 800; letter-spacing: -.04em; text-decoration: none; }
+.cft-brand-mark { display: grid; height: 24px; width: 24px; place-items: center; border-radius: 8px; background: #0c8d90; color: white; font-size: 18px; line-height: 1; }
+.cft-tank-label { margin: 31px 4px 6px; font-size: 10px; color: #99aaa9; }
+.cft-tank-name { border-radius: 8px; background: #f5f9f8; padding: 12px 10px; font-size: 12px; color: #36595a; }
+.cft-nav { display: grid; gap: 5px; margin-top: 20px; }
+.cft-nav-link { display: flex; align-items: center; gap: 10px; border-radius: 8px; padding: 10px; color: #668080; font-size: 12px; font-weight: 600; text-decoration: none; transition: .18s ease; }
+.cft-nav-link:hover { background: #f1f8f7; color: #0c8d90; }
+.cft-nav-link.is-active { background: #dff4f2; color: #07888b; }
+.cft-nav-icon { display: grid; width: 15px; place-items: center; color: inherit; font-size: 15px; }
+.cft-nav-mobile-label { display: none; }
+.cft-sidebar-bottom { margin-top: auto; color: #819493; font-size: 10px; }
+.cft-support { padding: 13px 4px; border-bottom: 1px solid #eef3f2; }
+.cft-user-row { display: flex; align-items: center; gap: 7px; padding: 13px 1px 0; }
+.cft-avatar { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 50%; background: #dff4f2; color: #087477; font-size: 10px; font-weight: 800; }
+.cft-user-row span:nth-child(2) { display: grid; line-height: 1.25; }
+.cft-user-row strong { font-size: 10px; color: #527271; }.cft-user-row small { font-size: 9px; }
+.cft-user-row button { margin-left: auto; border: 0; background: none; color: #78908f; font-size: 15px; }
+.cft-workspace { width: calc(100% - 218px); margin-left: 218px; min-width: 0; }
+.cft-topbar { height: 66px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2ecea; padding: 0 30px; background: rgba(255,255,255,.78); color: #829594; font-size: 11px; }.cft-topbar b { padding: 0 5px; color: #b3c2c0; }.cft-notification { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 50%; background: #fff; color: #8aa09f; box-shadow: 0 1px 3px #dbe8e6; }
+.cft-content { max-width: 1320px; margin: 0 auto; padding: 29px 30px 46px; }
+
+/* Shared page language: calm white surfaces, restrained teal actions. */
+.cft-content > div > aside, .cft-content section, .cft-content > div > div > section { box-shadow: 0 1px 1px rgba(36, 73, 75, .015); }
+.cft-content button.bg-slate-900, .cft-content .bg-slate-900 { background-color: #0b898c !important; }
+.cft-content button.bg-slate-900:hover { background-color: #087477 !important; }
+.cft-content .text-slate-900 { color: #274b4d !important; }
+.cft-content .border-slate-200 { border-color: #e0eae8 !important; }
+.cft-content .bg-slate-50 { background-color: #f7faf9 !important; }
+
+.cft-records-page,
+.cft-records-page > *,
+.cft-record-panel,
+.cft-record-chart-surface,
+.cft-record-chart {
+  min-width: 0;
+  max-width: 100%;
+}
+.cft-record-chart {
+  width: 100%;
+  border: 1px solid #e0eae8;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+}
+.cft-record-chart-plot {
+  width: 100%;
+  min-width: 0;
+  height: 380px;
+}
+.cft-record-chart-plot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+  font-family: inherit;
+}
+.cft-record-chart-plot svg:focus-visible {
+  outline: 2px solid #0b898c;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.cft-record-chart-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-height: 40px;
+  padding: 8px 0 0;
+  color: #668080;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.cft-record-chart-detail strong { color: #274b4d; }
+.cft-record-chart-message {
+  display: grid;
+  place-items: center;
+  min-height: 430px;
+  padding: 16px;
+  border: 1px solid #e0eae8;
+  border-radius: 12px;
+  background: #fff;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.cft-auth-page { min-height: 100vh; display: grid; place-items: center; padding: 32px; background: #f1f7f6; }
+.cft-auth-shell { display: grid; grid-template-columns: minmax(300px, 390px) minmax(340px, 470px); width: min(100%, 980px); min-height: 590px; overflow: hidden; border: 1px solid #e1ebe9; background: #fff; box-shadow: 0 24px 70px rgba(30, 75, 75, .08); }
+.cft-auth-story { display: flex; flex-direction: column; justify-content: space-between; padding: 36px; background: #10494e; color: white; }.cft-auth-logo { font-size: 14px; font-weight: 800; }.cft-auth-story h1 { margin: 0 0 12px; font-size: 30px; line-height: 1.4; letter-spacing: -.06em; }.cft-auth-story p, .cft-auth-story small { color: #c6dfde; font-size: 12px; }.cft-mini-aquarium { position: relative; height: 210px; overflow: hidden; border: 1px solid rgba(255,255,255,.25); border-radius: 6px; background: linear-gradient(#cceeed 0 18%, #b8e3e1 18% 72%, #dce4cd 72%); }.cft-mini-aquarium span { position: absolute; z-index: 1; top: 70px; left: 43%; font-size: 54px; filter: saturate(.8); }.cft-mini-aquarium i { position: absolute; bottom: 20px; width: 25px; height: 95px; border-left: 9px solid #3d937e; border-radius: 80% 0; transform: skew(-12deg); }.cft-mini-aquarium i:nth-of-type(1) { left: 28px; }.cft-mini-aquarium i:nth-of-type(2) { right: 28px; transform: scaleX(-1) skew(-12deg); }.cft-auth-form { display: flex; flex-direction: column; justify-content: center; padding: 64px; }.cft-auth-form form label { color: #577271; }.cft-auth-form input { border-color: #dfeae8; background: #f9fbfb; }.cft-auth-form button[type="submit"] { background: #0b898c; }.cft-auth-form button[type="submit"]:hover { background: #087477; }
+
+@media (max-width: 720px) {
+  .cft-records-page { grid-template-columns: minmax(0, 1fr); }
+  .cft-content .cft-record-panel { padding: 14px; }
+  .cft-record-chart-surface { padding: 10px; }
+  .cft-record-chart { padding: 8px; }
+  .cft-record-chart-plot { height: 240px; }
+  .cft-record-chart-message { min-height: 280px; }
+  .cft-record-ranges { gap: 6px; }
+  .cft-record-ranges > button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px 4px;
+    white-space: nowrap;
+  }
+  .cft-shell { display: block; padding-bottom: 72px; }
+  .cft-sidebar { position: static; display: block; width: 100%; min-height: 0; padding: 0; border: 0; background: #fff; }
+  .cft-brand { height: 58px; padding: 0 18px; border-bottom: 1px solid #e2ecea; font-size: 14px; }
+  .cft-brand::after { content: 'A'; display: grid; width: 25px; height: 25px; place-items: center; margin-left: auto; border-radius: 50%; background: #e1f5f3; color: #07888b; font-size: 10px; }
+  .cft-brand-mark { width: 23px; height: 23px; font-size: 16px; }
+  .cft-tank-label,.cft-tank-name,.cft-sidebar-bottom,.cft-topbar { display: none; }
+  .cft-nav { position: fixed; z-index: 50; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 0; padding: 7px 7px max(7px, env(safe-area-inset-bottom)); border-top: 1px solid #e2ecea; background: rgba(255,255,255,.97); box-shadow: 0 -3px 12px rgba(34, 71, 72, .04); }
+  .cft-nav-link { min-width: 0; flex-direction: column; justify-content: center; gap: 3px; padding: 5px 2px; border-radius: 8px; color: #839a99; font-size: 9px; font-weight: 700; }
+  .cft-mobile-hidden { display: none; }
+  .cft-nav-link.is-active { background: transparent; color: #07888b; }.cft-nav-link.is-active .cft-nav-icon { border-radius: 7px; background: #dff4f2; }
+  .cft-nav-icon { width: 28px; height: 23px; font-size: 17px; }.cft-nav-desktop-label { display: none; }.cft-nav-mobile-label { display: block; font-size: 10px; line-height: 1.3; }
+  .cft-workspace { width: 100%; margin-left: 0; }.cft-content { padding: 17px 12px 22px; font-size: 14px; line-height: 1.55; }.cft-content > div { gap: 12px; }.cft-content .rounded-\[20px\] { border-radius: 14px; }.cft-content .rounded-\[18px\] { border-radius: 12px; }
+  .cft-content .grid.sm\:grid-cols-\[220px_minmax\(0\,1fr\)\] > aside { padding: 12px; }.cft-content section { padding: 14px; }
+  /* 390px 표준 폭에서 작은 글씨가 뭉개지지 않도록 최소 가독성을 보장한다. */
+  .cft-content .text-xs { font-size: 0.8125rem; line-height: 1.5; }.cft-content .text-sm { font-size: 0.875rem; line-height: 1.5; }.cft-content .text-\[11px\] { font-size: 0.75rem; line-height: 1.45; }.cft-content .text-\[10px\] { font-size: 0.6875rem; line-height: 1.4; }
+  .cft-content input, .cft-content select, .cft-content textarea, .cft-auth-form input { font-size: 16px !important; line-height: 1.45; }
+  .cft-content button, .cft-content label, .cft-content p, .cft-content span { overflow-wrap: break-word; word-break: keep-all; }
+  .cft-content .tracking-tight { letter-spacing: -0.018em; }
+  .cft-auth-page { padding: 0; }.cft-auth-shell { grid-template-columns: 1fr; min-height: 100vh; border: 0; }.cft-auth-story { display: flex; min-height: 265px; padding: 28px; }.cft-auth-story h1 { font-size: 25px; }.cft-auth-story > div:nth-child(2) { align-self: start; }.cft-mini-aquarium { position: absolute; right: 25px; top: 128px; width: 118px; height: 92px; }.cft-mini-aquarium span { top: 23px; font-size: 34px; }.cft-mini-aquarium i { bottom: 5px; width: 12px; height: 42px; border-left-width: 5px; }.cft-auth-story small { margin-top: auto; }.cft-auth-form { padding: 31px 27px 45px; background: #fff; }.cft-auth-form .mb-6 { text-align: center; }
+  .cft-fish-select-page { display: block; padding: 0; background: #f1f7f6; }.cft-fish-select-card { min-height: 100vh; max-width: none; padding: 35px 18px; border: 0; border-radius: 0; box-shadow: none; }.cft-fish-select-card > div:first-child { margin-bottom: 28px; }.cft-fish-select-card .grid { gap: 10px; }.cft-fish-select-card .grid > button { min-height: 132px; padding: 16px 8px; border-radius: 12px; }.cft-fish-select-card .grid > button span:first-child { font-size: 40px; }
 }
 
 /* ================================
@@ -35,149 +174,4 @@
 	display: inline-block;
 	transform-origin: 50% 50%;
 	animation: fish2d-swim-wiggle 1.6s ease-in-out infinite;
-}
-
-@keyframes aquarium-plant-sway {
-	0%,
-	100% {
-		transform: translate(-50%, -100%) rotate(-1.5deg);
-	}
-
-	50% {
-		transform: translate(-50%, -100%) rotate(1.5deg);
-	}
-}
-
-.aquarium-plant-sway {
-	transform-origin: 50% 100%;
-	animation: aquarium-plant-sway 3.8s ease-in-out infinite;
-}
-
-/* ================================
-   어항 물 디테일: 카오틱 광선, 수면 반짝임, 기포
-   ================================ */
-
-@keyframes aquarium-caustic-drift {
-	0%,
-	100% {
-		background-position: 0% 0%, 30% 10%, 60% -10%, 15% 40%;
-	}
-	50% {
-		background-position: 15% 20%, 10% 30%, 40% 15%, 35% 20%;
-	}
-}
-
-.aquarium-caustics {
-	animation: aquarium-caustic-drift 30s ease-in-out infinite;
-}
-
-@keyframes aquarium-surface-shimmer {
-	0%,
-	100% {
-		background-position: 0% 0%;
-	}
-	50% {
-		background-position: 100% 0%;
-	}
-}
-
-.aquarium-surface {
-	animation: aquarium-surface-shimmer 6s ease-in-out infinite;
-}
-
-@keyframes aquarium-bubble-rise {
-	0% {
-		transform: translate(0, 0) scale(0.7);
-		opacity: 0;
-	}
-	12% {
-		opacity: 0.6;
-	}
-	85% {
-		opacity: 0.35;
-	}
-	100% {
-		transform: translate(var(--bubble-drift, 8px), -100%) scale(1);
-		opacity: 0;
-	}
-}
-
-.aquarium-bubble {
-	position: absolute;
-	bottom: 14%;
-	border-radius: 9999px;
-	background: radial-gradient(
-		circle at 35% 30%,
-		rgba(255, 255, 255, 0.9),
-		rgba(255, 255, 255, 0.15) 60%,
-		rgba(255, 255, 255, 0) 75%
-	);
-	animation-name: aquarium-bubble-rise;
-	animation-timing-function: ease-in;
-	animation-iteration-count: infinite;
-	pointer-events: none;
-}
-
-/* ================================
-   어항 테마: 밤 / 할로윈 / 크리스마스
-   ================================ */
-
-@keyframes aquarium-twinkle {
-	0%,
-	100% {
-		opacity: 0.25;
-		transform: scale(0.85);
-	}
-	50% {
-		opacity: 1;
-		transform: scale(1.1);
-	}
-}
-
-.aquarium-star {
-	animation-name: aquarium-twinkle;
-	animation-timing-function: ease-in-out;
-	animation-iteration-count: infinite;
-}
-
-@keyframes aquarium-bat-drift {
-	0%,
-	100% {
-		transform: translate(0, 0);
-	}
-	50% {
-		transform: translate(var(--bat-drift, 30px), -14px);
-	}
-}
-
-.aquarium-bat {
-	animation-name: aquarium-bat-drift;
-	animation-timing-function: ease-in-out;
-	animation-iteration-count: infinite;
-}
-
-@keyframes aquarium-snow-fall {
-	0% {
-		transform: translate(0, -20px) rotate(0deg);
-		opacity: 0;
-	}
-	10% {
-		opacity: 0.9;
-	}
-	90% {
-		opacity: 0.6;
-	}
-	100% {
-		transform: translate(var(--snow-drift, 10px), 460px) rotate(90deg);
-		opacity: 0;
-	}
-}
-
-.aquarium-snow {
-	position: absolute;
-	top: -20px;
-	animation-name: aquarium-snow-fall;
-	animation-timing-function: linear;
-	animation-iteration-count: infinite;
-	pointer-events: none;
 }

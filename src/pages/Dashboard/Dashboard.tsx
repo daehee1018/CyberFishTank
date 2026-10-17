@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { Fish2D } from '../../components/Fish2D';
 import Aquarium from '../../components/Aquarium';
+import FeedingCalendar from '../../components/FeedingCalendar';
+import { Link } from 'react-router-dom';
+import { Icon, PageHeading } from '../../components/UI';
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
@@ -57,6 +60,8 @@ const Dashboard: React.FC = () => {
     tankTheme,
     substrateColor,
     pollutionPreview,
+    alerts,
+    sensorRanges,
   } = useAppContext();
 
   // 물리 어항 영상은 admin 소유다. 다른 계정은 본인 카메라를
@@ -303,15 +308,15 @@ const Dashboard: React.FC = () => {
   const temperatureStatus =
     temperature === undefined
       ? '정보'
-      : temperature >= 24 &&
-          temperature <= 26
+      : temperature >= sensorRanges.temperatureMin &&
+          temperature <= sensorRanges.temperatureMax
         ? '정상'
         : '주의';
 
   const phStatus =
     ph === undefined
       ? '정보'
-      : ph >= 6 && ph <= 7
+      : ph >= sensorRanges.phMin && ph <= sensorRanges.phMax
         ? '정상'
         : '주의';
 
@@ -344,9 +349,9 @@ const Dashboard: React.FC = () => {
   const zScoreToSeverity = (z: number | null) =>
     z === null
       ? null
-      : z < 1
+      : z < sensorRanges.pollutionWarningZ
         ? 0
-        : z < 2.5
+        : z < sensorRanges.pollutionDangerZ
           ? 1
           : 2;
 
@@ -444,399 +449,136 @@ const Dashboard: React.FC = () => {
     },
   ];
 
-  // ====================================================
-  // 상태 색상
-  // ====================================================
-
-  const statusClasses: Record<
-    string,
-    string
-  > = {
-
-    정상:
-      'bg-emerald-50 text-emerald-700 border-emerald-200',
-
-    적정:
-      'bg-emerald-50 text-emerald-700 border-emerald-200',
-
-    주의:
-      'bg-amber-50 text-amber-700 border-amber-200',
-
-    낮음:
-      'bg-amber-50 text-amber-700 border-amber-200',
-
-    위험:
-      'bg-rose-50 text-rose-700 border-rose-200',
-
-    정보:
-      'bg-sky-50 text-sky-700 border-sky-200',
-  };
-
-  // ====================================================
-  // 화면
-  // ====================================================
+  const statIcons = ['temperature', 'flask', 'waves', 'water'] as const;
+  const statDescriptions = [ `적정 범위 ${sensorRanges.temperatureMin}–${sensorRanges.temperatureMax}°C`, `적정 범위 ${sensorRanges.phMin}–${sensorRanges.phMax}`, '어항의 물 높이를 확인해요', '평소 어항 상태와 비교해요'];
 
   return (
+    <div className="cft-dashboard-page">
+      <PageHeading title="내 어항 대시보드" description="물고기와 어항의 상태를 한눈에 확인하세요." />
+      {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
+      <div className="cft-dashboard-grid">
+        <div className="cft-dashboard-main">
+          <section className="cft-panel cft-twin-panel">
+            <div className="cft-panel-heading"><h2>실시간 디지털 트윈</h2><div className="cft-camera-controls">
+              {!useMyCamera && availableCameras.length > 1 && <select aria-label="카메라 선택" value={selectedCameraId} onChange={event => setSelectedCameraId(event.target.value)}><option value="">기본 카메라</option>{availableCameras.map((camera, index) => <option key={camera.deviceId} value={camera.deviceId}>{camera.label || `카메라 ${index + 1}`}</option>)}</select>}
+              <button className="cft-button" onClick={() => setIsLiveMode(!isLiveMode)}>{isLiveMode ? 'Digital Twin' : 'Live Render'} <Icon name="arrow" /></button>
+              <button className="cft-button" onClick={useMyCamera ? stopMyCamera : startMyCamera}><Icon name="camera" />{useMyCamera ? '카메라 끄기' : '카메라 켜기'}</button>
+            </div></div>
+            {myCameraError && <p role="alert" className="cft-error">{myCameraError}</p>}
+            <div className={`cft-live-aquarium relative overflow-hidden${isLiveMode ? ' is-live' : ''}`}>
+              {!isLiveMode ? (
 
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
+                /* -------------------------------------------
+                   디지털 트윈
+                   ------------------------------------------- */
 
-      {/* ==================================================
-          왼쪽 빠른 제어
-          ================================================== */}
+                <div className="
+                  absolute
+                  inset-0
+                  z-0
+                ">
 
-      <aside className="order-2 rounded-[20px] border border-slate-200 bg-white p-4 sm:order-none">
+                  <Aquarium
+                    variant="soft"
+                    showFish={false}
+                    decorations={aquariumDecorations}
+                    waterColor={waterColor}
+                    theme={tankTheme}
+                    substrateColor={substrateColor}
+                  >
 
-        <section className="mb-4 min-w-0 overflow-hidden rounded-[18px] border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-slate-900">자동 급식기</div>
-              <div className="mt-1 break-words text-xs leading-5 text-slate-500">
-                {feederStatus?.online ? 'RP2040 연결됨' : 'RP2040 연결 대기'}
-              </div>
-            </div>
-            <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] leading-4 font-medium ${feederStatus?.online ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
-              {feederStatus?.online ? '온라인' : '오프라인'}
-            </span>
-          </div>
+                    <Fish2D
+                      {...fishData}
+                    />
 
-          <div className="mt-4 grid grid-cols-2 gap-2 text-center">
-            <div className="rounded-[12px] bg-white p-3">
-              <div className="text-xs text-slate-500">급여 횟수</div>
-              <div className="mt-1 font-semibold text-slate-900">{feederStatus?.feed_count ?? 0} / 2</div>
-            </div>
-            <div className="rounded-[12px] bg-white p-3">
-              <div className="text-xs text-slate-500">현재 위치</div>
-              <div className="mt-1 font-semibold text-slate-900">{feederStatus?.angle ?? 0}°</div>
-            </div>
-          </div>
+                  </Aquarium>
 
-          <div className="mt-3 break-keep text-center text-xs leading-5 text-slate-600">
-            {feederStatus?.last_command_status === 'queued' ? '급여 명령 전송 대기 중...' : (feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2) ? '2회 급여 완료 · 초기화가 필요합니다.' : '급여 가능'}
-          </div>
-          {formatLastFeedTime(feederStatus?.last_feed_at) && (
-            <div className="mt-1 text-center text-xs leading-5 text-slate-500">
-              마지막 급여: {formatLastFeedTime(feederStatus?.last_feed_at)}
-            </div>
-          )}
-          {feederError && <div className="mt-3 break-words rounded-[12px] bg-red-50 px-3 py-2 text-xs leading-5 text-red-600">{feederError}</div>}
+                </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => requestFeederCommand('feed')}
-              disabled={feederRequesting || feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2 || feederStatus?.last_command_status === 'queued'}
-              className="min-w-0 rounded-[12px] bg-slate-900 px-2 py-2 text-sm font-medium leading-5 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              밥 주기
-            </button>
-            <button
-              type="button"
-              onClick={() => requestFeederCommand('reset')}
-              disabled={feederRequesting || feederStatus?.last_command_status === 'queued'}
-              className="min-w-0 rounded-[12px] border border-slate-300 bg-white px-2 py-2 text-sm font-medium leading-5 text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
-            >
-              초기화
-            </button>
-          </div>
-        </section>
-      </aside>
+              ) : !useMyCamera && isPhysicalTankOwner ? (
 
+                adminLiveFrame ? (
 
-      {/* ==================================================
-          오른쪽 메인
-          ================================================== */}
-
-      <div className="space-y-4">
-
-        {controlNotice && (
-          <div className="rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {controlNotice}
-          </div>
-        )}
-
-        {/* =================================================
-            디지털 트윈
-            ================================================= */}
-
-        <div className="relative overflow-hidden rounded-[20px] border border-slate-200 bg-white p-3 sm:p-5">
-
-          {/* ---------------------------------------------
-              제목
-              --------------------------------------------- */}
-
-          <div className="mb-3 flex items-center justify-between gap-2 sm:mb-4">
-
-            <div className="min-w-0">
-
-              <div className="text-xs text-slate-500 sm:text-sm">
-                실시간 디지털 트윈
-              </div>
-
-              <div className="truncate text-base font-semibold tracking-tight text-slate-900 sm:text-2xl">
-
-                {
-                  useMyCamera && isLiveMode
-                    ? '내 카메라 실시간 화면'
-                    : useMyCamera
-                    ? '내 카메라로 실시간 추적 중'
-                    : isLiveMode
-                    ? '실시간 하드웨어 피드 스트리밍'
-                    : '지능형 개체 미러링 화면'
-                }
-
-              </div>
-
-            </div>
-
-
-            <div className="flex flex-shrink-0 items-center gap-1.5 sm:flex-wrap sm:gap-2">
-
-              <button
-                onClick={() =>
-                  setIsLiveMode(
-                    !isLiveMode
-                  )
-                }
-                className="
-                  rounded-full
-                  border
-                  border-slate-200
-                  bg-slate-50
-                  px-2.5
-                  py-1.5
-                  text-xs
-                  font-medium
-                  text-slate-600
-                  transition
-                  hover:bg-slate-100
-                  sm:px-4
-                  sm:py-2
-                  sm:text-sm
-                "
-              >
-
-                {
-                  isLiveMode
-                    ? 'Digital Twin'
-                    : 'Live Render'
-                }
-
-              </button>
-
-              {!useMyCamera && availableCameras.length > 1 && (
-                <select
-                  value={selectedCameraId}
-                  onChange={(event) => setSelectedCameraId(event.target.value)}
-                  className="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 sm:block"
-                >
-                  <option value="">기본 카메라</option>
-                  {availableCameras.map((camera, index) => (
-                    <option key={camera.deviceId} value={camera.deviceId}>
-                      {camera.label || `카메라 ${index + 1}`}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              <button
-                onClick={useMyCamera ? stopMyCamera : startMyCamera}
-                className={`rounded-full border px-2.5 py-1.5 text-xs font-medium transition sm:px-4 sm:py-2 sm:text-sm ${
-                  useMyCamera
-                    ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
-                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {useMyCamera ? '카메라 끄기' : '카메라 켜기'}
-              </button>
-
-            </div>
-
-          </div>
-
-          {myCameraError && (
-            <div className="mb-4 rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-              {myCameraError}
-            </div>
-          )}
-
-          {/* =================================================
-              어항 화면
-              ================================================= */}
-
-          <div className="
-            relative
-            h-[320px]
-            overflow-hidden
-            rounded-[18px]
-            border
-            border-slate-200
-            bg-white
-            sm:h-[510px]
-          ">
-
-            {/* ---------------------------------------------
-                배경 (Live Render는 아래 video가 대신 채움)
-                --------------------------------------------- */}
-
-            {!isLiveMode ? (
-
-              /* -------------------------------------------
-                 디지털 트윈
-                 ------------------------------------------- */
-
-              <div className="
-                absolute
-                inset-0
-                z-0
-              ">
-
-                <Aquarium
-                  showFish={false}
-                  decorations={aquariumDecorations}
-                  waterColor={waterColor}
-                  theme={tankTheme}
-                  substrateColor={substrateColor}
-                >
-
-                  <Fish2D
-                    {...fishData}
+                  <img
+                    src={adminLiveFrame}
+                    className="
+                      absolute
+                      inset-0
+                      h-full
+                      w-full
+                      bg-white
+                      object-contain
+                    "
+                    alt="실시간 어항 카메라"
                   />
 
-                </Aquarium>
+                ) : (
 
-              </div>
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">
+                    실시간 화면을 기다리는 중...
+                  </div>
 
-            ) : !useMyCamera && isPhysicalTankOwner ? (
+                )
 
-              adminLiveFrame ? (
+              ) : !useMyCamera ? (
 
-                <img
-                  src={adminLiveFrame}
-                  className="
-                    absolute
-                    inset-0
-                    h-full
-                    w-full
-                    bg-slate-900
-                    object-contain
-                  "
-                  alt="실시간 어항 카메라"
-                />
+                /* admin이 아닌 계정은 본인 카메라를 안 켰으면
+                   admin의 물리 어항 영상이 보이면 안 된다. */
 
-              ) : (
-
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">
-                  실시간 화면을 기다리는 중...
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center text-sm text-slate-400">
+                  <div>실시간 화면을 보려면 내 카메라를 먼저 켜주세요.</div>
                 </div>
 
-              )
+              ) : null}
 
-            ) : !useMyCamera ? (
-
-              /* admin이 아닌 계정은 본인 카메라를 안 켰으면
-                 admin의 물리 어항 영상이 보이면 안 된다. */
-
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center text-sm text-slate-400">
-                <div>실시간 화면을 보려면 내 카메라를 먼저 켜주세요.</div>
-              </div>
-
-            ) : null}
-
-            {/* 내 카메라 영상. 프레임 캡처가 끊기지 않도록 라이브/트윈
-                모드와 상관없이 항상 마운트해두고, 크기만 바꾼다. */}
-            {useMyCamera && (
+              {/* 내 카메라 영상. 프레임 캡처가 끊기지 않도록 라이브/트윈
+                  모드와 상관없이 항상 마운트해두고, 크기만 바꾼다. */}
               <video
-                ref={myVideoRef}
-                muted
-                playsInline
-                className={
-                  isLiveMode
-                    ? 'absolute inset-0 z-0 h-full w-full bg-slate-900 object-contain'
-                    : 'absolute right-3 top-3 z-10 h-24 w-32 overflow-hidden rounded-[10px] border border-white/70 object-cover shadow-lg'
-                }
-              />
-            )}
-            <canvas ref={myCaptureCanvasRef} className="hidden" />
+                  ref={myVideoRef}
+                  hidden={!useMyCamera}
+                  muted
+                  playsInline
+                  className={
+                    isLiveMode
+                      ? 'absolute inset-0 z-0 h-full w-full bg-white object-contain'
+                      : 'absolute right-3 top-3 z-10 h-24 w-32 overflow-hidden rounded-[10px] border border-white/70 bg-slate-900 object-contain shadow-lg'
+                  }
+                />
+              <canvas ref={myCaptureCanvasRef} className="hidden" />
 
+            </div>
+            <div className="cft-twin-footer"><span><Icon name="camera" />{useMyCamera ? '내 카메라 연결됨 · 실시간 추적 중' : isLiveMode ? '실시간 카메라 화면' : '실시간 상태 · 디지털 어항'}</span></div>
+          </section>
+          <div className="cft-stat-grid">
+            {bottomStats.map((item, index) => (
+              <section className="cft-stat-card" key={item.label}>
+                <div className="cft-stat-label">
+                  <Icon name={statIcons[index]} /><span>{item.label}</span>
+                  <span className={`cft-badge ${['주의', '낮음'].includes(item.status) ? 'is-warning' : item.status === '위험' ? 'is-danger' : item.status === '정보' ? 'is-neutral' : 'is-success'}`}>{item.status}</span>
+                </div>
+                <div className="cft-stat-value">{item.value}</div>
+                <p>{statDescriptions[index]}</p>
+              </section>
+            ))}
           </div>
-
         </div>
-
-
-        {/* =================================================
-            하단 센서 상태
-            ================================================= */}
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-
-          {bottomStats.map(
-            (item) => (
-
-              <div
-                key={item.label}
-                className="
-                  rounded-[18px]
-                  border
-                  border-slate-200
-                  bg-white
-                  px-3
-                  py-3
-                  sm:px-5
-                  sm:py-4
-                  text-center
-                  text-slate-900
-                  shadow-[0_8px_24px_rgba(15,23,42,0.04)]
-                "
-              >
-
-                <div className="
-                  text-sm
-                  font-medium
-                  text-slate-500
-                ">
-                  {item.label}
-                </div>
-
-
-                <div className="
-                  mt-2
-                  text-2xl
-                  font-bold
-                  tracking-tight
-                ">
-                  {item.value}
-                </div>
-
-
-                <div
-                  className={`
-                    mt-3
-                    inline-flex
-                    rounded-full
-                    border
-                    px-3
-                    py-1
-                    text-xs
-                    font-medium
-                    ${statusClasses[item.status] || ''}
-                  `}
-                >
-
-                  {item.status}
-
-                </div>
-
-              </div>
-
-            )
-          )}
-
+        <div className="cft-dashboard-sidebar">
+          <section className="cft-panel cft-feeder-panel">
+            <div className="cft-panel-heading"><h2>자동 급식기</h2><span className={`cft-badge ${feederStatus?.online ? 'is-success' : 'is-neutral'}`}>{feederStatus?.online ? '온라인' : '오프라인'}</span></div>
+            <p className="cft-caption cft-feeder-connection">{feederStatus?.online ? 'RP2040 연결됨' : 'RP2040 연결 대기'}</p>
+            <div className="cft-feeder-stats"><div><span>급여 횟수</span><strong>{feederStatus?.feed_count ?? 0} / 2</strong></div><div><span>현재 위치</span><strong>{feederStatus?.angle ?? 0}°</strong></div></div>
+            <div className={`cft-feeder-message ${(feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2) ? 'is-warning' : ''}`}>{feederStatus?.last_command_status === 'queued' ? '급여 명령 전송 대기 중...' : (feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2) ? '오늘 2회 급여를 완료했어요. 다시 사용하려면 초기화해주세요.' : '물고기에게 먹이를 줄 수 있어요.'}</div>
+            {formatLastFeedTime(feederStatus?.last_feed_at) && <p className="cft-caption cft-feeder-last-feed">마지막 급여: {formatLastFeedTime(feederStatus?.last_feed_at)}</p>}
+            {feederError && <p className="cft-error" role="alert">{feederError}</p>}
+            <div className="cft-feeder-actions"><button className="cft-button is-primary" onClick={() => requestFeederCommand('feed')} disabled={feederRequesting || feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2 || feederStatus?.last_command_status === 'queued'}>밥 주기</button><button className="cft-button" onClick={() => requestFeederCommand('reset')} disabled={feederRequesting || feederStatus?.last_command_status === 'queued'}>초기화</button></div>
+          </section>
+          <div className="cft-calendar-panel"><FeedingCalendar key={currentUser?.id} apiBase={API_BASE} lastFeedAt={feederStatus?.last_feed_at ?? null} /></div>
+          <section className="cft-panel cft-recent-alerts"><div className="cft-panel-heading"><h2>최근 알림</h2><Link to="/records" state={{ tab: '알림' }} className="cft-text-link">전체 보기</Link></div>
+            {alerts.length ? alerts.slice(0, 2).map(alert => <div className="cft-alert-row" key={alert.id}><span className="cft-alert-icon"><Icon name="bell" /></span><div><strong>{alert.title}</strong><p>{alert.detail}</p><time>{alert.time}</time></div></div>) : <div className="cft-empty">새로운 알림이 없습니다.</div>}
+          </section>
         </div>
-
       </div>
-
     </div>
   );
 };
-
 export default Dashboard;

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Icon } from '../../components/UI';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
 
@@ -54,8 +55,8 @@ const FishSelect: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-6 py-10">
-      <div className="w-full max-w-2xl rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+    <div className="cft-fish-select-page flex min-h-screen items-center justify-center bg-slate-100 px-6 py-10">
+      <div className="cft-fish-select-card w-full max-w-2xl rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
         <div className="mb-6 text-center">
           <div className="text-sm text-slate-500">CyberFishTank</div>
           <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
@@ -90,7 +91,7 @@ const FishSelect: React.FC = () => {
                       : 'border-slate-100 bg-slate-50/60 text-slate-400 hover:border-slate-200'
                 }`}
               >
-                <span className="text-4xl">{species.emoji}</span>
+                <span className="cft-species-icon"><Icon name="fish" /></span>
                 <span className={`text-sm font-medium ${species.available ? 'text-slate-900' : 'text-slate-400'}`}>
                   {species.name}
                 </span>

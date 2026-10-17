@@ -489,12 +489,15 @@ def pt_or_none(p):
     return None if p is None else [float(p[0]), float(p[1])]
 
 
-def make_payload(t: Track, frame_id: int, w: int, h: int):
+def make_payload(t: Track, frame_id: int, w: int, h: int, timestamp: float):
     nx, ny = normalize_center(t.box, w, h)
     cx, cy = center(t.box)
     return {
         "frame_id": int(frame_id),
-        "timestamp": time.time(),
+        # Inference-input time, not an independently measured capture time.
+        "timestamp": timestamp,
+        "timestamp_ms": int(timestamp * 1000),
+        "frame_size": [w, h],
         "track_id": int(t.tid),
         "state": t.state,
         "bbox": [float(x) for x in t.box.tolist()],
@@ -527,6 +530,7 @@ class UserSession:
         self.tracker = MultiTracker()
         self.selected_tid: Optional[int] = None
         self.frame_id = 0
+        self.stream_id = str(time.time_ns())
         self.last_seen = time.time()
 
 
@@ -602,7 +606,11 @@ def infer(req: FrameRequest):
             pose = select_pose_for_track(t.box, pose_candidates)
             t.update_pose(pose)
             detect_abnormal_behavior(t)
-            payload = make_payload(t, session.frame_id, w, h)
+            payload = make_payload(t, session.frame_id, w, h, timestamp)
             break
 
-    return {"success": True, "fish": payload}
+    if payload is not None:
+        payload["stream_id"] = session.stream_id
+    return {"success": True, "fish": payload, "frame_id": session.frame_id,
+            "timestamp_ms": int(timestamp * 1000), "frame_size": [w, h],
+            "stream_id": session.stream_id}

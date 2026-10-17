@@ -1,6 +1,6 @@
 // src/components/FishAppearance.tsx
 //
-// 가벼운 코스메틱 커스터마이징: 색상 틴트(hue-rotate) + 액세서리(이모지).
+// 가벼운 코스메틱 커스터마이징: RGB 색상 틴트 + 액세서리(이모지).
 // AI 사진 변환(FishSettings)과 달리 새 이미지를 만들지 않고, 어떤
 // 스프라이트든 위에 겹쳐 적용되므로 즉시 반영되고 되돌리기도 쉽다.
 //
@@ -11,15 +11,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { ACCESSORY_STYLE } from './Fish2D';
+import { useFishColorFilter } from './FishColorFilter';
+import type { FishRgb } from '../types/preferences';
 
-const HUE_PRESETS: { label: string; hue: number }[] = [
-  { label: '원래색', hue: 0 },
-  { label: '블루', hue: 200 },
-  { label: '퍼플', hue: 270 },
-  { label: '핑크', hue: 320 },
-  { label: '골드', hue: 40 },
-  { label: '그린', hue: 120 },
+const RGB_PRESETS: { label: string; color: FishRgb }[] = [
+  { label: '블루', color: { r: 65, g: 135, b: 235 } },
+  { label: '퍼플', color: { r: 160, g: 95, b: 220 } },
+  { label: '핑크', color: { r: 245, g: 110, b: 165 } },
+  { label: '골드', color: { r: 240, g: 180, b: 55 } },
+  { label: '그린', color: { r: 70, g: 190, b: 120 } },
 ];
+const RGB_CHANNELS = [
+  { key: 'r', label: '빨강 (R)', accent: '#dc6262' },
+  { key: 'g', label: '초록 (G)', accent: '#399b70' },
+  { key: 'b', label: '파랑 (B)', accent: '#548ed4' },
+] as const;
 
 const ACCESSORY_OPTIONS: { key: string; label: string; emoji: string }[] = [
   { key: '', label: '없음', emoji: '' },
@@ -41,6 +47,7 @@ export default function FishAppearance() {
     currentUser,
     fishSpecies,
     fishColorHue,
+    fishColorRgb,
     fishAccessory,
     fishAccessoryX,
     fishAccessoryY,
@@ -49,6 +56,15 @@ export default function FishAppearance() {
   } = useAppContext();
 
   const [hue, setHue] = useState(fishColorHue);
+  const [rgb, setRgb] = useState<FishRgb | null>(fishColorRgb);
+  const { colorFilter, colorFilterDefinition } = useFishColorFilter(rgb, hue);
+  const displayedRgb = rgb ?? { r: 255, g: 255, b: 255 };
+  const updateChannel = (channel: keyof FishRgb, value: number) => {
+    if (!Number.isFinite(value)) return;
+    setRgb({ ...displayedRgb, [channel]: Math.round(Math.min(255, Math.max(0, value))) });
+    setHue(0);
+    setMessage('');
+  };
   const [accessory, setAccessory] = useState(fishAccessory);
   const [posX, setPosX] = useState<number | null>(fishAccessoryX);
   const [posY, setPosY] = useState<number | null>(fishAccessoryY);
@@ -62,6 +78,8 @@ export default function FishAppearance() {
   useEffect(() => {
     setHue(fishColorHue);
   }, [fishColorHue]);
+
+  useEffect(() => setRgb(fishColorRgb), [fishColorRgb]);
 
   useEffect(() => {
     setAccessory(fishAccessory);
@@ -87,6 +105,7 @@ export default function FishAppearance() {
 
   const dirty =
     hue !== fishColorHue ||
+    JSON.stringify(rgb) !== JSON.stringify(fishColorRgb) ||
     accessory !== fishAccessory ||
     posX !== fishAccessoryX ||
     posY !== fishAccessoryY;
@@ -148,7 +167,7 @@ export default function FishAppearance() {
     setSaving(true);
     setMessage('');
 
-    const result = await updateFishAppearance(hue, accessory, posX, posY);
+    const result = await updateFishAppearance(hue, accessory, posX, posY, rgb);
 
     setSaving(false);
 
@@ -164,13 +183,14 @@ export default function FishAppearance() {
   }
 
   return (
-    <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.02)]">
+    <div className="cft-fish-appearance rounded-[20px] border border-slate-200 bg-white p-5">
+      {colorFilterDefinition}
       <h3 className="text-base font-semibold text-slate-900 mb-1">
-        🎨 물고기 색상 / 액세서리
+        물고기 그래픽
       </h3>
 
       <p className="text-xs text-slate-500 mb-4">
-        어떤 그래픽을 쓰든(기본/AI 변환본) 항상 위에 겹쳐 적용됩니다.
+        색상과 액세서리로 물고기에게 나만의 개성을 더해주세요.
       </p>
 
       <div className="flex flex-col sm:flex-row gap-5">
@@ -198,7 +218,7 @@ export default function FishAppearance() {
                   objectFit: 'contain',
                   display: 'block',
                   pointerEvents: 'none',
-                  filter: `hue-rotate(${hue}deg) drop-shadow(0 4px 6px rgba(15,23,42,0.3))`,
+                  filter: `${colorFilter} drop-shadow(0 4px 6px rgba(15,23,42,0.3))`,
                 }}
               />
               {accessory && (
@@ -243,33 +263,18 @@ export default function FishAppearance() {
         </div>
 
         <div className="flex-1 space-y-4">
-          {/* 색상 프리셋 */}
-          <div>
-            <div className="mb-2 text-xs font-semibold text-slate-500">색상</div>
+          <div className="cft-rgb-editor">
+            <div className="cft-rgb-heading"><strong>물고기 색상 · RGB</strong><span className="cft-rgb-sample" style={{ background: rgb ? `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})` : 'linear-gradient(135deg, #efb1bc, #66b9d1)' }} aria-label={rgb ? `선택 색상 RGB ${rgb.r}, ${rgb.g}, ${rgb.b}` : '원래색'} /></div>
+            <p className="cft-caption">{rgb ? '각 색상을 0~255 사이에서 조절하세요.' : '원래색 사용 중 · RGB를 조절하면 선택한 색상을 입혀요.'}</p>
             <div className="flex flex-wrap gap-2">
-              {HUE_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  onClick={() => setHue(preset.hue)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                    hue === preset.hue
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              ))}
+              <button type="button" className="cft-button" aria-pressed={rgb === null && hue === 0} onClick={() => { setRgb(null); setHue(0); }}>원래색</button>
+              {RGB_PRESETS.map(preset => <button key={preset.label} type="button" className="cft-color-swatch" style={{ background: `rgb(${preset.color.r}, ${preset.color.g}, ${preset.color.b})` }} aria-label={preset.label} aria-pressed={JSON.stringify(rgb) === JSON.stringify(preset.color)} onClick={() => { setRgb(preset.color); setHue(0); }} />)}
             </div>
-
-            <input
-              type="range"
-              min={0}
-              max={360}
-              value={hue}
-              onChange={(event) => setHue(Number(event.target.value))}
-              className="mt-3 w-full"
-            />
+            {RGB_CHANNELS.map(channel => <div className="cft-rgb-channel" key={channel.key}>
+              <label htmlFor={`fish-rgb-${channel.key}`}>{channel.label}</label>
+              <input id={`fish-rgb-${channel.key}`} type="range" min={0} max={255} step={1} value={displayedRgb[channel.key]} style={{ accentColor: channel.accent }} onChange={event => updateChannel(channel.key, Number(event.target.value))} />
+              <input type="number" aria-label={`${channel.label} 값`} min={0} max={255} step={1} value={displayedRgb[channel.key]} onChange={event => { if (event.target.value !== '') updateChannel(channel.key, event.target.valueAsNumber); }} />
+            </div>)}
           </div>
 
           {/* 액세서리 */}

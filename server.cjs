@@ -10,6 +10,9 @@ const Database = require('better-sqlite3');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const { trackingPayload } = require('./tracking-payload.cjs');
+const { registerRigRoutes } = require('./fish-rig.cjs');
+const { DEFAULT_SENSOR_RANGES, createSensorSettingsStore, sensorAlertsForValues, isValidRgb } = require('./sensor-settings.cjs');
 
 const app = express();
 
@@ -306,9 +309,17 @@ authDb.prepare(`
 `).run();
 
 console.log('✅ fish_graphics 테이블 확인 완료');
+if (!authDb.prepare('PRAGMA table_info(fish_graphics)').all().some(column => column.name === 'rig_json')) {
+  authDb.exec('ALTER TABLE fish_graphics ADD COLUMN rig_json TEXT');
+}
+
+// Preserve legacy hue colors until an RGB color is explicitly saved.
+if (!authDb.prepare('PRAGMA table_info(user_fish)').all().some(column => column.name === 'color_rgb')) {
+  authDb.exec('ALTER TABLE user_fish ADD COLUMN color_rgb TEXT');
+}
 
 const getUserFishStmt = authDb.prepare(`
-  SELECT species, fish_name, color_hue, accessory, accessory_x, accessory_y, tank_theme, substrate_color, active_graphic_dir, decorations_json FROM user_fish WHERE user_id = ?
+  SELECT species, fish_name, color_hue, color_rgb, accessory, accessory_x, accessory_y, tank_theme, substrate_color, active_graphic_dir, decorations_json FROM user_fish WHERE user_id = ?
 `);
 
 const upsertUserFishStmt = authDb.prepare(`
@@ -321,7 +332,7 @@ const upsertUserFishStmt = authDb.prepare(`
 `);
 
 const updateUserFishAppearanceStmt = authDb.prepare(`
-  UPDATE user_fish SET color_hue = @color_hue, accessory = @accessory, accessory_x = @accessory_x, accessory_y = @accessory_y WHERE user_id = @user_id
+  UPDATE user_fish SET color_hue = @color_hue, color_rgb = @color_rgb, accessory = @accessory, accessory_x = @accessory_x, accessory_y = @accessory_y WHERE user_id = @user_id
 `);
 
 const updateTankThemeStmt = authDb.prepare(`
@@ -592,6 +603,7 @@ app.get('/api/fish', requireAuth, (req, res) => {
           species: row.species,
           fishName: row.fish_name,
           colorHue: row.color_hue,
+          colorRgb: row.color_rgb ? JSON.parse(row.color_rgb) : null,
           accessory: row.accessory,
           accessoryX: row.accessory_x,
           accessoryY: row.accessory_y,
@@ -630,7 +642,11 @@ app.post('/api/fish', requireAuth, (req, res) => {
 // ============================================================
 
 app.post('/api/fish/appearance', requireAuth, (req, res) => {
-  const { colorHue, accessory, accessoryX, accessoryY } = req.body || {};
+  const { colorHue, colorRgb, accessory, accessoryX, accessoryY } = req.body || {};
+
+  if (colorRgb !== undefined && !isValidRgb(colorRgb)) {
+    return res.status(400).json({ success: false, error: 'RGB 값은 각각 0~255 사이의 정수여야 합니다.' });
+  }
 
   const normalizedHue = Number(colorHue);
 
@@ -666,6 +682,7 @@ app.post('/api/fish/appearance', requireAuth, (req, res) => {
   updateUserFishAppearanceStmt.run({
     user_id: req.session.userId,
     color_hue: Math.round(normalizedHue),
+    color_rgb: colorRgb === undefined ? existing.color_rgb : colorRgb === null ? null : JSON.stringify({ r: colorRgb.r, g: colorRgb.g, b: colorRgb.b }),
     accessory: normalizedAccessory,
     accessory_x: normalizedX,
     accessory_y: normalizedY,
@@ -675,6 +692,7 @@ app.post('/api/fish/appearance', requireAuth, (req, res) => {
     success: true,
     fish: {
       colorHue: Math.round(normalizedHue),
+      colorRgb: colorRgb === undefined ? (existing.color_rgb ? JSON.parse(existing.color_rgb) : null) : colorRgb,
       accessory: normalizedAccessory,
       accessoryX: normalizedX,
       accessoryY: normalizedY,
@@ -759,7 +777,8 @@ app.post('/api/aquarium-decorations', requireAuth, (req, res) => {
     typeof item.type === 'string' &&
     typeof item.src === 'string' &&
     Number.isFinite(item.x) &&
-    Number.isFinite(item.y);
+    Number.isFinite(item.y) &&
+    (item.layer === undefined || item.layer === 'back' || item.layer === 'front');
 
   if (!decorations.every(isValidDecoration)) {
     return res.status(400).json({ success: false, error: '장식 데이터가 올바르지 않습니다.' });
@@ -871,24 +890,18 @@ app.post('/api/camera/frame', requireAuth, async (req, res) => {
     // 이 계정으로 로그인된 다른 기기(예: 폰)도 같은 데이터를 보게
     // /posi와 동일한 형태로 WebSocket 브로드캐스트한다.
     // AppContext가 owner_user_id로 필터링해서 본인 계정에만 적용한다.
-    const broadcastMessage = JSON.stringify({
-      owner_user_id: req.session.userId,
-      center_norm: fish.center_norm ?? [0.5, 0.5],
-      move_direction: fish.move_direction ?? 'none',
-      pose_direction: fish.pose_direction ?? 'none',
-      keypoints: {
-        head: fish.keypoints?.head ?? [0.5, 0.5],
-        tail: fish.keypoints?.tail ?? [0.5, 0.5],
-      },
-      state: fish.state ?? 'tracked',
-      abnormal: Boolean(fish.abnormal),
-    });
+    const broadcastMessage = JSON.stringify(trackingPayload(fish, userId, { ...result, source: 'personal' }));
 
     wss.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(broadcastMessage);
       }
     });
+  }
+
+  if (result?.success && !fish) {
+    const message = JSON.stringify(trackingPayload(null, req.session.userId, { ...result, source: 'personal' }));
+    wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(message); });
   }
 
   res.json(result);
@@ -913,6 +926,26 @@ app.post('/api/camera/confirm-setup', requireAuth, (req, res) => {
 // 이 계정 소유의 센서 장치가 /api/sensor-data를 보낼 때
 // X-Sensor-Key 헤더에 이 값을 넣어서 어느 계정 것인지 식별한다.
 // ============================================================
+
+const sensorSettingsStore = createSensorSettingsStore(authDb);
+
+app.get('/api/sensor-settings', requireAuth, (req, res) => {
+  res.json({ success: true, ranges: sensorSettingsStore.get(req.session.userId) });
+});
+
+app.post('/api/sensor-settings', requireAuth, (req, res) => {
+  try {
+    const ranges = sensorSettingsStore.save(req.session.userId, req.body?.ranges);
+    pollutionDangerStreakByUser.delete(req.session.userId);
+    const message = JSON.stringify({ type: 'sensor_settings', owner_user_id: req.session.userId, ranges });
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) client.send(message);
+    });
+    res.json({ success: true, ranges });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
 
 app.get('/api/sensor-key', requireAuth, (req, res) => {
   let row = getSensorKeyStmt.get(req.session.userId);
@@ -2267,6 +2300,8 @@ app.get('/api/fish/graphics', requireAuth, (req, res) => {
     })),
   });
 });
+
+registerRigRoutes({ app, requireAuth, db: authDb, publicDir: path.join(__dirname, 'public'), ensureDefault: ensureDefaultGraphicRecorded });
 
 app.post('/api/fish/graphics/select', requireAuth, (req, res) => {
   const { graphicId } = req.body || {};
@@ -4164,7 +4199,7 @@ function handlePollutionAlert(userId, turbidityVoltage, tds) {
     return;
   }
 
-  const severity = computePollutionSeverity(baseline, turbidityVoltage, tds);
+  const severity = computePollutionSeverity(baseline, turbidityVoltage, tds, sensorSettingsStore.get(userId));
 
   if (severity !== 2) {
     pollutionDangerStreakByUser.delete(userId);
@@ -4287,89 +4322,8 @@ function createAlertIfAllowed({
 
 function evaluateSensorAlert(sensorData, userId) {
   const eventTime = sensorData.timestamp || new Date().toISOString();
-
-  const temperature =
-  sensorData.temperature === null ||
-  sensorData.temperature === undefined
-    ? NaN
-    : Number(sensorData.temperature);
-
-  const ph =
-    sensorData.ph === null ||
-    sensorData.ph === undefined
-      ? NaN
-      : Number(sensorData.ph);
-
-  const waterLevel =
-    sensorData.water_level_detected === null ||
-    sensorData.water_level_detected === undefined ||
-    sensorData.water_level_detected === ''
-      ? NaN
-      : Number(sensorData.water_level_detected);
-
-  // ============================================================
-  // 수온
-  // ============================================================
-
-  if (Number.isFinite(temperature)) {
-    if (temperature > 26) {
-      createAlertIfAllowed({
-        type: 'temperature-increase',
-        title: '수온 상승 경고',
-        detail: '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도',
-        eventTime,
-        userId
-      });
-    } else if (temperature < 24) {
-      createAlertIfAllowed({
-        type: 'temperature-decrease',
-        title: '수온 저하 경고',
-        detail: '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도',
-        eventTime,
-        userId
-      });
-    }
-  }
-
-  // ============================================================
-  // pH
-  // ============================================================
-
-  if (Number.isFinite(ph)) {
-    if (ph > 7) {
-      createAlertIfAllowed({
-        type: 'ph-increase',
-        title: 'pH 상승 경고',
-        detail: 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7',
-        eventTime,
-        userId
-      });
-    } else if (ph < 6) {
-      createAlertIfAllowed({
-        type: 'ph-decrease',
-        title: 'pH 하락 경고',
-        detail: 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7',
-        eventTime,
-        userId
-      });
-    }
-  }
-
-  // ============================================================
-  // 수위
-  // ============================================================
-
-  if (
-    Number.isFinite(waterLevel) &&
-    waterLevel === 0
-  ) {
-    createAlertIfAllowed({
-      type: 'water-decrease',
-      title: '수위 저하 경고',
-      detail: '수위가 기준보다 낮습니다.',
-      eventTime,
-      userId
-    });
+  for (const alert of sensorAlertsForValues(sensorData, sensorSettingsStore.get(userId))) {
+    createAlertIfAllowed({ ...alert, eventTime, userId });
   }
 }
 
@@ -4526,19 +4480,6 @@ try {
 } catch (error) {
   // 이미 컬럼이 있으면 정상이다.
 }
-// 기존에 완료된 급여도 마지막 급여 시각으로 표시한다.
-authDb.prepare(`
-  UPDATE feeder_status
-  SET last_feed_at = (
-    SELECT completed_at FROM feeder_commands
-    WHERE user_id = feeder_status.user_id
-      AND command = 'FEED'
-      AND status = 'completed'
-    ORDER BY completed_at DESC, id DESC
-    LIMIT 1
-  )
-  WHERE last_feed_at IS NULL
-`).run();
 authDb.prepare(`
   CREATE TABLE IF NOT EXISTS feeder_commands (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4552,6 +4493,31 @@ authDb.prepare(`
   )
 `).run();
 authDb.prepare('CREATE INDEX IF NOT EXISTS idx_feeder_commands_next ON feeder_commands(user_id, status, id)').run();
+authDb.prepare(`CREATE INDEX IF NOT EXISTS idx_feeder_commands_history
+  ON feeder_commands(user_id, command, status, completed_at)`).run();
+
+// 새 DB에서도 명령 테이블을 만든 뒤 기존 완료 기록을 조회한다.
+authDb.prepare(`
+  UPDATE feeder_status
+  SET last_feed_at = (
+    SELECT completed_at FROM feeder_commands
+    WHERE user_id = feeder_status.user_id
+      AND command = 'FEED'
+      AND status = 'completed'
+    ORDER BY completed_at DESC, id DESC
+    LIMIT 1
+  )
+  WHERE last_feed_at IS NULL
+`).run();
+
+const getFeedingHistoryStmt = authDb.prepare(`
+  SELECT date(completed_at, '+9 hours') AS date, COUNT(*) AS count
+  FROM feeder_commands
+  WHERE user_id = ? AND command = 'FEED' AND status = 'completed'
+    AND completed_at >= ? AND completed_at < ?
+  GROUP BY date(completed_at, '+9 hours')
+  ORDER BY date
+`);
 
 const ensureFeederStatusStmt = authDb.prepare(`
   INSERT INTO feeder_status (user_id, updated_at) VALUES (?, ?)
@@ -4604,6 +4570,20 @@ app.post('/api/feeder/feed', requireAuth, (req, res) => queueFeederCommand(req, 
 app.post('/api/feeder/reset', requireAuth, (req, res) => queueFeederCommand(req, res, 'RESET'));
 app.get('/api/feeder/status', requireAuth, (req, res) => {
   res.json({ success: true, ...feederStatusPayload(req.session.userId) });
+});
+
+app.get('/api/feeder/history', requireAuth, (req, res) => {
+  const { month } = req.query;
+  if (typeof month !== 'string' || !/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(month)) {
+    return res.status(400).json({ success: false, error: '조회할 월을 YYYY-MM 형식으로 지정해주세요.' });
+  }
+
+  // 달력은 한국 시간 기준. 월의 시작/끝을 UTC로 바꿔 인덱스로 조회한다.
+  const start = new Date(`${month}-01T00:00:00+09:00`);
+  const [year, monthNumber] = month.split('-').map(Number);
+  const end = new Date(Date.UTC(year, monthNumber, 1) - 9 * 60 * 60 * 1000);
+  const days = getFeedingHistoryStmt.all(req.session.userId, start.toISOString(), end.toISOString());
+  res.json({ success: true, month, days });
 });
 
 // queued 명령을 processing으로 원자적으로 claim하여 polling 중 중복 실행을 막는다.
@@ -5109,9 +5089,9 @@ function computePollutionBaseline(userId) {
 // 클라이언트(Dashboard)의 z-score → 오염도 등급 판정과 동일한
 // 공식. 서버 알림도 같은 기준으로 판단해야 앱에 보이는 표시와
 // 실제로 알림이 뜨는 조건이 어긋나지 않는다.
-function computePollutionSeverity(baseline, turbidityVoltage, tds) {
+function computePollutionSeverity(baseline, turbidityVoltage, tds, ranges = DEFAULT_SENSOR_RANGES) {
   const zScoreToSeverity = (z) =>
-    z === null ? null : z < 1 ? 0 : z < 2.5 ? 1 : 2;
+    z === null ? null : z < ranges.pollutionWarningZ ? 0 : z < ranges.pollutionDangerZ ? 1 : 2;
 
   const turbidityZ =
     turbidityVoltage === null ||
@@ -5736,70 +5716,7 @@ app.post(
         process.env.ADMIN_USERNAME || 'admin'
       );
 
-    const payload = {
-
-      owner_user_id:
-        physicalTankOwner
-          ? physicalTankOwner.id
-          : null,
-
-      center_norm:
-        Array.isArray(
-          data?.center_norm
-        )
-          ? data.center_norm
-          : [0.5, 0.5],
-
-
-      move_direction:
-        data?.move_direction ||
-        'none',
-
-
-      pose_direction:
-        data?.pose_direction ||
-        'none',
-
-
-      // ======================================================
-      // YOLO Keypoints
-      // ======================================================
-
-      keypoints: {
-
-        head:
-          Array.isArray(
-            data?.keypoints?.head
-          )
-            ? data.keypoints.head
-            : [0.5, 0.5],
-
-
-        tail:
-          Array.isArray(
-            data?.keypoints?.tail
-          )
-            ? data.keypoints.tail
-            : [0.5, 0.5]
-
-      },
-
-
-      state:
-        data?.state ||
-        'tracked',
-
-
-      abnormal:
-        Boolean(
-          data?.abnormal
-        ),
-
-      abnormal_reason:
-        data?.abnormal_reason ||
-        null
-
-    };
+    const payload = trackingPayload(data?.fish === null ? null : data, physicalTankOwner?.id ?? null, { ...data, source: 'physical' });
 
 
     // ========================================================
@@ -5818,15 +5735,11 @@ app.post(
 
 
         center_x:
-          Number(
-            payload.center_norm[0]
-          ),
+          payload.center_norm?.[0] ?? null,
 
 
         center_y:
-          Number(
-            payload.center_norm[1]
-          ),
+          payload.center_norm?.[1] ?? null,
 
 
         move_direction:
@@ -5838,27 +5751,19 @@ app.post(
 
 
         head_x:
-          Number(
-            payload.keypoints.head[0]
-          ),
+          payload.keypoints.head?.[0] ?? null,
 
 
         head_y:
-          Number(
-            payload.keypoints.head[1]
-          ),
+          payload.keypoints.head?.[1] ?? null,
 
 
         tail_x:
-          Number(
-            payload.keypoints.tail[0]
-          ),
+          payload.keypoints.tail?.[0] ?? null,
 
 
         tail_y:
-          Number(
-            payload.keypoints.tail[1]
-          ),
+          payload.keypoints.tail?.[1] ?? null,
 
 
         state:

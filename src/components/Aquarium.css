@@ -1,0 +1,122 @@
+.aquarium {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--aquarium-water);
+  background-image: radial-gradient(ellipse at 38% -20%, #d5eee448, transparent 65%), linear-gradient(180deg, #d5e9dc18, transparent 32%, #103d4140 78%, #102f386b);
+  transition: background-color 1.5s ease;
+}
+.aquarium-depth, .aquarium-rear-plants, .aquarium-decorations, .aquarium-bubbles, .aquarium-fish-layer, .aquarium-foreground, .aquarium-theme-tint, .aquarium-seasonal, .aquarium-night-lights, .aquarium-glass {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.aquarium-depth {
+  z-index: 0;
+  background: radial-gradient(ellipse at 0% 87%, #123e3c80, transparent 48%), radial-gradient(ellipse at 100% 90%, #153d3f70, transparent 38%);
+}
+.aquarium-rear-plants { z-index: 1; }
+.aquarium-rear-plants img {
+  position: absolute;
+  object-fit: contain;
+  object-position: bottom;
+  bottom: 12%;
+  width: 27%;
+  height: 40%;
+  right: -3%;
+  opacity: .38;
+  filter: saturate(.45) brightness(.65);
+}
+.aquarium-rear-plants img + img { right: 11%; width: 15%; height: 23%; opacity: .24; }
+.aquarium-substrate {
+  position: absolute;
+  z-index: 2;
+  left: -3%;
+  bottom: -5%;
+  width: 106%;
+  height: 19%;
+  overflow: hidden;
+  border-radius: 46% 52% 0 0 / 13% 22% 0 0;
+  background-color: var(--sand-color);
+  background-image: radial-gradient(ellipse at 23% 15%, #344b4740, transparent 32%), radial-gradient(ellipse at 70% 55%, #f1e7cd45, transparent 50%), url('/assets/aquarium/natural/sand-grain.svg'), linear-gradient(#426c6359, transparent 38%, #6d603520);
+  background-size: auto, auto, 180px 120px, auto;
+  background-position: center, center, 0 0, center;
+  box-shadow: inset 0 6px 12px #264d4324;
+  transition: background-color 1s ease;
+}
+.aquarium-floor-light {
+  position: absolute;
+  inset: -30%;
+  opacity: .12;
+  background-image: repeating-radial-gradient(ellipse at 20% 40%, transparent 0 24px, #fff4d9 26px 27px, transparent 30px 62px), repeating-radial-gradient(ellipse at 80% 20%, transparent 0 36px, #fff4d9 38px 39px, transparent 42px 94px);
+  transform: scaleY(.48) rotate(-8deg);
+  animation: aquarium-floor-drift 24s ease-in-out infinite alternate;
+}
+.aquarium-hardscape { position: absolute; z-index: 3; left: -2%; bottom: 9%; width: 39%; height: 56%; pointer-events: none; }
+.aquarium-hardscape img { position: relative; width: 100%; height: 100%; object-fit: contain; object-position: left bottom; filter: saturate(.65) brightness(.84); }
+.aquarium-hardscape-shadow { position: absolute; left: 10%; right: 7%; bottom: -1%; height: 5%; border-radius: 50%; background: #193b3566; filter: blur(5px); }
+.aquarium-decorations--back { z-index: 4; }
+/* The fish layer deliberately has no stacking context: mood UI can stay above plants. */
+.aquarium-fish-layer { overflow: visible; }
+.aquarium-decoration-anchor { position: absolute; transform: translate(-50%, -100%); }
+.aquarium-decoration {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: saturate(.8) brightness(.9);
+}
+.aquarium-decorations--back .aquarium-decoration { filter: saturate(.65) brightness(.81); }
+.aquarium-contact-shadow { position: absolute; bottom: -1%; left: 14%; width: 72%; height: 5%; border-radius: 50%; background: #183e354a; filter: blur(3px); }
+.aquarium-plant-sway { transform-origin: 50% 100%; animation: aquarium-plant-sway var(--plant-duration, 6.3s) var(--plant-delay, -1.7s) ease-in-out infinite; }
+.aquarium-bubbles { z-index: 6; }
+.aquarium-bubble {
+  position: absolute;
+  bottom: 10%;
+  border: 1px solid #d5f0ed66;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, #eefdf378, transparent 60%);
+  opacity: 0;
+  animation: aquarium-bubble-rise 9s linear infinite;
+}
+.aquarium-foreground { z-index: 12; }
+.aquarium-foreground img { position: absolute; object-fit: contain; object-position: center bottom; bottom: 1%; filter: saturate(.68) brightness(.75); transform-origin: 50% 100%; animation: aquarium-plant-sway 7.1s -3.4s ease-in-out infinite; }
+.aquarium-foreground-left { left: -3%; width: 14%; height: 20%; }
+.aquarium-foreground-right { right: -2%; width: 21%; height: 27%; animation-duration: 8.6s !important; animation-delay: -5.7s !important; }
+.aquarium-decorations--front { z-index: 13; }
+.aquarium-surface { position: absolute; z-index: 14; top: 0; left: 0; width: 100%; height: 3%; pointer-events: none; opacity: .45; background: linear-gradient(#deefe24a, transparent); }
+.aquarium-glass { z-index: 15; box-shadow: inset 0 0 28px #0b303333, inset 1px 1px 1px #d4eee136; border-radius: inherit; }
+.aquarium-theme-tint { z-index: 4; }
+.aquarium-seasonal, .aquarium-night-lights { z-index: 7; }
+.aquarium-night-lights span { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #d4e8da; animation: aquarium-twinkle 4s ease-in-out infinite; }
+.aquarium-snow { position: absolute; top: -20px; color: #e9f0e9; font-size: 12px; opacity: 0; animation: aquarium-snow-fall 12s linear infinite; }
+.aquarium[data-theme="night"] .aquarium-hardscape, .aquarium[data-theme="night"] .aquarium-foreground { filter: brightness(.7); }
+.cft-decoration-controls { margin-bottom: 20px; }
+.cft-decoration-controls input[type="range"] { width: 100%; padding-inline: 0; accent-color: #0b898c; }
+@keyframes aquarium-plant-sway { 0%, 100% { transform: rotate(-.8deg); } 50% { transform: rotate(1.1deg); } }
+@keyframes aquarium-bubble-rise {
+  0% { transform: translate(0, 0) scale(.7); opacity: 0; }
+  10% { opacity: .5; }
+  86% { opacity: .35; }
+  100% { transform: translate(var(--bubble-drift, 8px), var(--bubble-rise, -400px)) scale(1); opacity: 0; }
+}
+@keyframes aquarium-floor-drift { to { transform: translate(3%, -2%) scaleY(.53) rotate(-5deg); } }
+@keyframes aquarium-twinkle { 0%, 100% { opacity: .2; } 50% { opacity: .65; } }
+@keyframes aquarium-snow-fall { 10% { opacity: .4; } 90% { opacity: .25; } 100% { transform: translate(12px, calc(-1 * var(--bubble-rise, -400px))); opacity: 0; } }
+@media (max-width: 720px) {
+  .aquarium-hardscape { width: 46%; height: 43%; }
+  .aquarium-rear-plants img { width: 32%; height: 32%; }
+  .aquarium-foreground-right { width: 24%; height: 19%; }
+  .aquarium-foreground-left { height: 15%; }
+  .aquarium-floor-light { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aquarium *, .aquarium *::before, .aquarium *::after { animation: none !important; transition: none !important; }
+  .aquarium-bubble, .aquarium-snow { display: none; }
+}

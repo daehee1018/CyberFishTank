@@ -1,3 +1,4 @@
+import type { FishTrackingSample } from '../lib/fishTracking';
 import React, {
   createContext,
   useContext,
@@ -6,6 +7,10 @@ import React, {
   useRef,
   type ReactNode,
 } from 'react';
+
+import { DEFAULT_SENSOR_RANGES } from '../types/preferences';
+import type { FishRgb, SensorRanges } from '../types/preferences';
+import { readSensorSettingsResponse } from '../services/sensorSettings';
 
 // ======================================================
 // 조명 스케줄
@@ -38,15 +43,7 @@ interface Alert {
 // YOLO / 물고기 데이터
 // ======================================================
 
-export interface FishData {
-  center_norm: number[];
-  move_direction: string;
-  pose_direction: string;
-  head: number[];
-  tail: number[];
-  state: string;
-  abnormal: boolean;
-}
+export type FishData = FishTrackingSample;
 
 // ======================================================
 // 어항 커스터마이징 구조물
@@ -56,6 +53,7 @@ export type AquariumDecorationType =
   | 'house'
   | 'plant'
   | 'rock'
+  | 'cave'
   | 'structure';
 
 export interface AquariumDecoration {
@@ -74,6 +72,8 @@ export interface AquariumDecoration {
   height?: number;
 
   sway?: boolean;
+  // Older saved layouts render behind the fish.
+  layer?: 'back' | 'front';
 }
 
 // ======================================================
@@ -209,6 +209,7 @@ interface AppContextType {
 
   // 색상 틴트(0~360도, hue-rotate 각도) / 액세서리(빈 문자열 = 없음)
   fishColorHue: number;
+  fishColorRgb: FishRgb | null;
   fishAccessory: string;
 
   // 액세서리를 드래그해서 잡은 위치(%, 0~100). null이면 액세서리별 기본 위치를 쓴다.
@@ -219,8 +220,15 @@ interface AppContextType {
     colorHue: number,
     accessory: string,
     accessoryX?: number | null,
-    accessoryY?: number | null
+    accessoryY?: number | null,
+    colorRgb?: FishRgb | null
   ) => Promise<{ success: boolean; error?: string }>;
+
+  sensorRanges: SensorRanges;
+  sensorRangesLoading: boolean;
+  sensorRangesError: string;
+  reloadSensorRanges: () => void;
+  updateSensorRanges: (ranges: SensorRanges) => Promise<{ success: boolean; error?: string }>;
 
   // 어항 배경 테마: 'default' | 'night' | 'halloween' | 'christmas'
   tankTheme: string;
@@ -246,7 +254,7 @@ interface AppContextType {
   refreshFish: () => Promise<void>;
 
   // admin 전용 오염도 미리보기(실제 판정과 무관하게 화면 표시만
-  // 강제로 바꾸는 디버그 값). Dashboard와 관리자 테스트 페이지가
+  // 강제로 바꾸는 디버그 값). Dashboard와 관리자 페이지가
   // 같이 써야 해서 전역 상태로 둔다.
   pollutionPreview: number | null;
   setPollutionPreview: (val: number | null) => void;
@@ -401,6 +409,63 @@ export const AppProvider: React.FC<{
     currentUserIdRef.current = currentUser?.id ?? null;
   }, [currentUser]);
 
+  const [sensorRanges, setSensorRanges] = useState<SensorRanges>({ ...DEFAULT_SENSOR_RANGES });
+  const [sensorRangesLoading, setSensorRangesLoading] = useState(true);
+  const [sensorRangesError, setSensorRangesError] = useState('');
+  const [sensorRangesReload, setSensorRangesReload] = useState(0);
+  const sensorRangesRef = useRef<{ userId: number; ranges: SensorRanges } | null>(null);
+  const reloadSensorRanges = () => setSensorRangesReload(value => value + 1);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    sensorRangesRef.current = null;
+    setSensorRanges({ ...DEFAULT_SENSOR_RANGES });
+    setSensorRangesError('');
+    setSensorRangesLoading(Boolean(currentUser));
+    if (!currentUser) return () => controller.abort();
+    const userId = currentUser.id;
+    const load = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/sensor-settings`, {
+          credentials: 'include', cache: 'no-store', signal: controller.signal,
+        });
+        const data = await readSensorSettingsResponse(response);
+        if (!response.ok || !data.success || !data.ranges) throw new Error(data.error || '센서 알림 범위를 불러오지 못했습니다.');
+        if (!controller.signal.aborted) {
+          sensorRangesRef.current = { userId, ranges: data.ranges };
+          setSensorRanges(data.ranges);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) setSensorRangesError(error instanceof Error ? error.message : '센서 설정 조회 실패');
+      } finally {
+        if (!controller.signal.aborted) setSensorRangesLoading(false);
+      }
+    };
+    void load();
+    return () => controller.abort();
+  }, [currentUser?.id, sensorRangesReload]);
+
+  const updateSensorRanges = async (ranges: SensorRanges) => {
+    if (!currentUser) return { success: false, error: '로그인이 필요합니다.' };
+    const userId = currentUser.id;
+    try {
+      const response = await fetch(`${API_BASE}/api/sensor-settings`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ranges }),
+      });
+      const data = await readSensorSettingsResponse(response);
+      if (!response.ok || !data.success || !data.ranges) return { success: false, error: data.error || '센서 알림 범위 저장에 실패했습니다.' };
+      if (currentUserIdRef.current === userId) {
+        sensorRangesRef.current = { userId, ranges: data.ranges };
+        setSensorRanges(data.ranges);
+        setSensorRangesError('');
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error && !(error instanceof TypeError) ? error.message : '서버에 연결할 수 없습니다.' };
+    }
+  };
+
   const [authLoading, setAuthLoading] =
     useState(true);
 
@@ -489,6 +554,7 @@ export const AppProvider: React.FC<{
       setFishSpecies(null);
       setFishName('');
       setFishColorHue(0);
+      setFishColorRgb(null);
       setFishAccessory('');
       setFishAccessoryX(null);
       setFishAccessoryY(null);
@@ -523,6 +589,7 @@ export const AppProvider: React.FC<{
       setFishSpecies(null);
       setFishName('');
       setFishColorHue(0);
+      setFishColorRgb(null);
       setFishAccessory('');
       setFishAccessoryX(null);
       setFishAccessoryY(null);
@@ -559,6 +626,7 @@ export const AppProvider: React.FC<{
             setFishSpecies(data.fish.species);
             setFishName(data.fish.fishName);
             setFishColorHue(data.fish.colorHue ?? 0);
+            setFishColorRgb(data.fish.colorRgb ?? null);
             setFishAccessory(data.fish.accessory ?? '');
             setFishAccessoryX(data.fish.accessoryX ?? null);
             setFishAccessoryY(data.fish.accessoryY ?? null);
@@ -571,6 +639,7 @@ export const AppProvider: React.FC<{
             setFishSpecies(null);
             setFishName('');
             setFishColorHue(0);
+            setFishColorRgb(null);
             setFishAccessory('');
             setFishAccessoryX(null);
             setFishAccessoryY(null);
@@ -628,14 +697,15 @@ export const AppProvider: React.FC<{
     colorHue: number,
     accessory: string,
     accessoryX: number | null = null,
-    accessoryY: number | null = null
+    accessoryY: number | null = null,
+    colorRgb: FishRgb | null = fishColorRgb
   ) => {
     try {
       const response = await fetch(`${API_BASE}/api/fish/appearance`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ colorHue, accessory, accessoryX, accessoryY }),
+        body: JSON.stringify({ colorHue, colorRgb, accessory, accessoryX, accessoryY }),
       });
 
       const data = await response.json();
@@ -645,6 +715,7 @@ export const AppProvider: React.FC<{
       }
 
       setFishColorHue(colorHue);
+      setFishColorRgb(colorRgb);
       setFishAccessory(accessory);
       setFishAccessoryX(accessoryX);
       setFishAccessoryY(accessoryY);
@@ -721,6 +792,7 @@ export const AppProvider: React.FC<{
         setFishSpecies(data.fish.species);
         setFishName(data.fish.fishName);
         setFishColorHue(data.fish.colorHue ?? 0);
+        setFishColorRgb(data.fish.colorRgb ?? null);
         setFishAccessory(data.fish.accessory ?? '');
         setFishAccessoryX(data.fish.accessoryX ?? null);
         setFishAccessoryY(data.fish.accessoryY ?? null);
@@ -782,6 +854,8 @@ export const AppProvider: React.FC<{
 
   const [fishColorHue, setFishColorHue] =
     useState(0);
+
+  const [fishColorRgb, setFishColorRgb] = useState<FishRgb | null>(null);
 
   const [fishAccessory, setFishAccessory] =
     useState('');
@@ -855,7 +929,8 @@ export const AppProvider: React.FC<{
         typeof item.type === 'string' &&
         typeof item.src === 'string' &&
         Number.isFinite(item.x) &&
-        Number.isFinite(item.y)
+        Number.isFinite(item.y) &&
+        (item.layer === undefined || item.layer === 'back' || item.layer === 'front')
     );
   };
 
@@ -1120,16 +1195,19 @@ export const AppProvider: React.FC<{
   };
 
   const evaluateRealtimeSensor = (temp: number, ph: number, waterLevel: number, timestampStr: string) => {
+    const savedRanges = sensorRangesRef.current;
+    if (!savedRanges || savedRanges.userId !== currentUserIdRef.current) return;
+    const ranges = savedRanges.ranges;
     const eventTimeMs = new Date(timestampStr).getTime() || Date.now();
 
     if (Number.isFinite(temp)) {
-      if (temp > 26) checkAndSaveAlert('temperature-increase', '수온 상승 경고', '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도', eventTimeMs);
-      else if (temp < 24) checkAndSaveAlert('temperature-decrease', '수온 저하 경고', '수온이/가 기준에서 벗어났습니다. 적정 기준: 24 ~ 26도', eventTimeMs);
+      if (temp > ranges.temperatureMax) checkAndSaveAlert('temperature-increase', '수온 상승 경고', `수온이 설정 범위를 벗어났습니다. 적정 기준: ${ranges.temperatureMin} ~ ${ranges.temperatureMax}°C`, eventTimeMs);
+      else if (temp < ranges.temperatureMin) checkAndSaveAlert('temperature-decrease', '수온 저하 경고', `수온이 설정 범위를 벗어났습니다. 적정 기준: ${ranges.temperatureMin} ~ ${ranges.temperatureMax}°C`, eventTimeMs);
     }
 
     if (Number.isFinite(ph)) {
-      if (ph > 7) checkAndSaveAlert('ph-increase', 'pH 상승 경고', 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7', eventTimeMs);
-      else if (ph < 6) checkAndSaveAlert('ph-decrease', 'pH 하락 경고', 'pH이/가 기준에서 벗어났습니다. 적정 기준: 6 ~ 7', eventTimeMs);
+      if (ph > ranges.phMax) checkAndSaveAlert('ph-increase', 'pH 상승 경고', `pH가 설정 범위를 벗어났습니다. 적정 기준: ${ranges.phMin} ~ ${ranges.phMax}`, eventTimeMs);
+      else if (ph < ranges.phMin) checkAndSaveAlert('ph-decrease', 'pH 하락 경고', `pH가 설정 범위를 벗어났습니다. 적정 기준: ${ranges.phMin} ~ ${ranges.phMax}`, eventTimeMs);
     }
 
     if (Number.isFinite(waterLevel) && waterLevel === 0) {
@@ -1218,15 +1296,10 @@ export const AppProvider: React.FC<{
   // ====================================================
 
   const [fishData, setFishData] =
-    useState<FishData>({
-      center_norm: [0.5, 0.5],
-      move_direction: 'none',
-      pose_direction: 'none',
-      head: [0.5, 0.5],
-      tail: [0.5, 0.5],
-      state: 'tracked',
-      abnormal: false,
-    });
+    useState<FishData>({ state: 'waiting' });
+
+  useEffect(() => { setFishData({ state: 'waiting' }); }, [currentUser?.id]);
+
 
   // ====================================================
   // 센서 데이터
@@ -1373,12 +1446,14 @@ export const AppProvider: React.FC<{
 
     const socket =
       new WebSocket(WS_URL);
+    let disposed = false;
 
     // ==================================================
     // 연결 성공
     // ==================================================
 
     socket.onopen = () => {
+      if (disposed) return;
 
       console.log(
         '✅ WebSocket 연결 성공'
@@ -1396,11 +1471,20 @@ export const AppProvider: React.FC<{
     // ==================================================
 
     socket.onmessage = (event) => {
+      if (disposed) return;
 
       try {
 
         const data =
           JSON.parse(event.data);
+
+        if (data.type === 'sensor_settings') {
+          if (data.owner_user_id !== currentUserIdRef.current || !data.ranges) return;
+          sensorRangesRef.current = { userId: data.owner_user_id, ranges: data.ranges };
+          setSensorRanges(data.ranges);
+          setSensorRangesError('');
+          return;
+        }
 
         // =================================================
         // 0. Live Render 원본 프레임 확인
@@ -1484,6 +1568,7 @@ export const AppProvider: React.FC<{
         // =================================================
 
         const isYoloData =
+          data.type === 'fish_tracking' ||
           data.center_norm !== undefined ||
           data.move_direction !== undefined ||
           data.head !== undefined ||
@@ -1495,47 +1580,19 @@ export const AppProvider: React.FC<{
           // 로그인한 계정이 그 소유자가 아니면 이 데이터를 무시한다
           // (본인 카메라를 켠 경우에만 자기 데이터를 따로 받는다).
           if (
-            data.owner_user_id !== undefined &&
+            currentUserIdRef.current === null ||
             data.owner_user_id !== currentUserIdRef.current
           ) {
             return;
           }
 
           const newFishData: FishData = {
-
-            center_norm:
-              Array.isArray(data.center_norm)
-                ? data.center_norm
-                : [0.5, 0.5],
-
-            move_direction:
-              data.move_direction || 'none',
-
-            pose_direction:
-              data.pose_direction || 'none',
-
-            head: Array.isArray(data.head)
-              ? data.head
-              : Array.isArray(data.keypoints?.head)
-                ? data.keypoints.head
-                : [0.5, 0.5],
-
-            tail: Array.isArray(data.tail)
-              ? data.tail
-              : Array.isArray(data.keypoints?.tail)
-                ? data.keypoints.tail
-                : [0.5, 0.5],
-
-            state:
-              data.state || 'tracked',
-
-            abnormal:
-              Boolean(data.abnormal),
+            ...data,
+            head: data.keypoints && Object.hasOwn(data.keypoints, 'head') ? data.keypoints.head : data.head ?? null,
+            tail: data.keypoints && Object.hasOwn(data.keypoints, 'tail') ? data.keypoints.tail : data.tail ?? null,
+            receivedAt: performance.now(),
           };
-
-          setFishData(
-            newFishData
-          );
+          setFishData(newFishData);
 
           return;
         }
@@ -2104,6 +2161,7 @@ export const AppProvider: React.FC<{
     // ==================================================
 
     socket.onerror = (error) => {
+      if (disposed) return;
 
       console.error(
         '❌ WebSocket 오류:',
@@ -2118,6 +2176,7 @@ export const AppProvider: React.FC<{
     // ==================================================
 
     socket.onclose = () => {
+      if (disposed) return;
 
       console.log(
         '🔌 WebSocket 연결 종료'
@@ -2136,6 +2195,7 @@ export const AppProvider: React.FC<{
         '🧹 AppProvider 종료 → WebSocket 정리'
       );
 
+      disposed = true;
       socket.close();
     };
 
@@ -2198,6 +2258,12 @@ export const AppProvider: React.FC<{
     fishLoading,
     updateFish,
     fishColorHue,
+    fishColorRgb,
+    sensorRanges,
+    sensorRangesLoading,
+    sensorRangesError,
+    reloadSensorRanges,
+    updateSensorRanges,
     fishAccessory,
     fishAccessoryX,
     fishAccessoryY,
