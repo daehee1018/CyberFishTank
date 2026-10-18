@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AuthStory } from '../../components/UI';
+import AuthLayout from '../../components/AuthLayout';
 import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
 
@@ -43,10 +43,7 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="cft-auth-page">
-      <div className="cft-auth-shell">
-        <AuthStory />
-        <div className="cft-auth-form">
+    <AuthLayout>
         <div className="cft-auth-heading"><h1>다시 만나 반가워요</h1><p>로그인하고 내 어항의 소식을 확인하세요.</p></div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -94,9 +91,7 @@ const Login: React.FC = () => {
             회원가입
           </Link>
         </div>
-        </div>
-      </div>
-    </div>
+    </AuthLayout>
   );
 };
 

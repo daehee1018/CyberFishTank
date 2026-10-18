@@ -1,0 +1,30 @@
+{
+  "input": "Synthetic fixed 1280×720, 400ms packets, 60Hz display, horizontal valid pose. Not a real-camera measurement.",
+  "settings": {
+    "positionMinCutoff": 0.65,
+    "positionBeta": 4,
+    "derivativeCutoff": 1,
+    "displaySeconds": 0.085,
+    "scaleRange": [
+      0.9,
+      1.1
+    ]
+  },
+  "stationaryRmsNormalizedX": {
+    "legacy": 0.002582573264280275,
+    "improved": 0.0023959337601643046
+  },
+  "slowMeanLagMs": {
+    "legacy": 908.6667038583248,
+    "improved": 318.55510771406057
+  },
+  "fastMeanLagMs": {
+    "legacy": 291.6694340010626,
+    "improved": 287.85449683072335
+  },
+  "depthScaleRange": [
+    1,
+    1.0999999999999994
+  ],
+  "caveat": "Lag is against the latest sampled ground truth, not interpolated video truth. Fin spreading without pose/length evidence can still be confused with approach."
+}

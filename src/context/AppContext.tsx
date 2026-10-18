@@ -1,3 +1,5 @@
+import { ReconnectingSocket } from '../services/reconnectingSocket';
+import { trackedFetch as fetch } from '../services/requestActivity';
 import type { FishTrackingSample } from '../lib/fishTracking';
 import React, {
   createContext,
@@ -11,6 +13,7 @@ import React, {
 import { DEFAULT_SENSOR_RANGES } from '../types/preferences';
 import type { FishRgb, SensorRanges } from '../types/preferences';
 import { readSensorSettingsResponse } from '../services/sensorSettings';
+import useDarkMode from '../hooks/useDarkMode';
 
 // ======================================================
 // 조명 스케줄
@@ -73,7 +76,7 @@ export interface AquariumDecoration {
 
   sway?: boolean;
   // Older saved layouts render behind the fish.
-  layer?: 'back' | 'front';
+  layer?: 'back' | 'middle' | 'front';
 }
 
 // ======================================================
@@ -170,6 +173,8 @@ interface AppContextType {
 
   currentUser: AuthUser | null;
   authLoading: boolean;
+  authError: string;
+  refreshConnection: () => void;
 
   login: (
     username: string,
@@ -281,6 +286,8 @@ interface AppContextType {
   // --------------------------------------------------
 
   aquariumDecorations: AquariumDecoration[];
+  decorationSaveStatus: 'idle' | 'saving' | 'saved' | 'error';
+  retryDecorationSave: () => void;
 
   setAquariumDecorations: (
     decorations: AquariumDecoration[]
@@ -398,6 +405,8 @@ export const AppProvider: React.FC<{
     import.meta.env.VITE_API_URL ||
     'https://ggnu.site';
 
+  const [fishOwnerId, setFishOwnerId] = useState<number | null>(null);
+
   const [currentUser, setCurrentUser] =
     useState<AuthUser | null>(null);
 
@@ -408,6 +417,29 @@ export const AppProvider: React.FC<{
   useEffect(() => {
     currentUserIdRef.current = currentUser?.id ?? null;
   }, [currentUser]);
+
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
+  const refreshConnection = () => {
+    window.dispatchEvent(new Event('cft:refresh'));
+    window.dispatchEvent(new Event('cft:reconnect'));
+  };
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => setRefreshEpoch(value => value + 1), 150);
+    };
+    window.addEventListener('online', refresh);
+    window.addEventListener('cft:refresh', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('online', refresh);
+      window.removeEventListener('cft:refresh', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, []);
 
   const [sensorRanges, setSensorRanges] = useState<SensorRanges>({ ...DEFAULT_SENSOR_RANGES });
   const [sensorRangesLoading, setSensorRangesLoading] = useState(true);
@@ -469,31 +501,47 @@ export const AppProvider: React.FC<{
   const [authLoading, setAuthLoading] =
     useState(true);
 
+  const [authError, setAuthError] = useState('');
+  const authRevision = useRef(0);
   useEffect(() => {
+    const controller = new AbortController();
+    const revision = authRevision.current;
+    let retry: ReturnType<typeof setTimeout>;
     const loadCurrentUser = async () => {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const request = new AbortController();
+      const cancel = () => request.abort();
       try {
+        // A timeout must be retryable; use a separate signal from effect cleanup.
+        controller.signal.addEventListener('abort', cancel, { once: true });
+        timeout = setTimeout(() => request.abort(), 10000);
         const response = await fetch(`${API_BASE}/api/me`, {
-          credentials: 'include',
-          cache: 'no-store',
+          credentials: 'include', cache: 'no-store', signal: request.signal,
         });
-
-        if (!response.ok) {
+        if (controller.signal.aborted || authRevision.current !== revision) return;
+        if (response.status === 401) {
           setCurrentUser(null);
-          return;
+          setAuthError('');
+        } else {
+          if (!response.ok) throw new Error('서버 응답 오류');
+          const data = await response.json();
+          if (controller.signal.aborted || authRevision.current !== revision) return;
+          setCurrentUser(previous => JSON.stringify(previous) === JSON.stringify(data.user ?? null) ? previous : data.user ?? null);
+          setAuthError('');
         }
-
-        const data = await response.json();
-        setCurrentUser(data.user ?? null);
-      } catch (error) {
-        console.error('❌ 로그인 상태 확인 실패:', error);
-        setCurrentUser(null);
+      } catch {
+        if (controller.signal.aborted || authRevision.current !== revision) return;
+        setAuthError('서버에 연결할 수 없습니다. 연결되면 다시 확인합니다.');
+        retry = setTimeout(loadCurrentUser, 5000);
       } finally {
-        setAuthLoading(false);
+        clearTimeout(timeout);
+        controller.signal.removeEventListener('abort', cancel);
+        if (!controller.signal.aborted && authRevision.current === revision) setAuthLoading(false);
       }
     };
-
-    loadCurrentUser();
-  }, []);
+    void loadCurrentUser();
+    return () => { controller.abort(); clearTimeout(retry); };
+  }, [refreshEpoch]);
 
   const login = async (username: string, password: string) => {
     try {
@@ -510,6 +558,8 @@ export const AppProvider: React.FC<{
         return { success: false, error: data.error || '로그인에 실패했습니다.' };
       }
 
+      authRevision.current++;
+      setAuthError('');
       setCurrentUser(data.user);
       return { success: true };
     } catch (error) {
@@ -533,6 +583,8 @@ export const AppProvider: React.FC<{
         return { success: false, error: data.error || '회원가입에 실패했습니다.' };
       }
 
+      authRevision.current++;
+      setAuthError('');
       setCurrentUser(data.user);
       return { success: true };
     } catch (error) {
@@ -542,28 +594,31 @@ export const AppProvider: React.FC<{
   };
 
   const logout = async () => {
+    authRevision.current++;
     try {
-      await fetch(`${API_BASE}/api/logout`, {
+      const response = await fetch(`${API_BASE}/api/logout`, {
         method: 'POST',
         credentials: 'include',
       });
+      if (!response.ok) throw new Error('로그아웃 실패');
     } catch (error) {
       console.error('❌ 로그아웃 요청 실패:', error);
-    } finally {
-      setCurrentUser(null);
-      setFishSpecies(null);
-      setFishName('');
-      setFishColorHue(0);
-      setFishColorRgb(null);
-      setFishAccessory('');
-      setFishAccessoryX(null);
-      setFishAccessoryY(null);
-      setTankTheme('default');
-      setSubstrateColor('natural');
-      setActiveGraphicDir('');
-      skipNextDecorationsSaveRef.current = true;
-      setAquariumDecorations([]);
+      throw error;
     }
+    setAuthError('');
+    setCurrentUser(null);
+    setFishSpecies(null);
+    setFishName('');
+    setFishColorHue(0);
+    setFishColorRgb(null);
+    setFishAccessory('');
+    setFishAccessoryX(null);
+    setFishAccessoryY(null);
+    setTankTheme('default');
+    setSubstrateColor('natural');
+    setActiveGraphicDir('');
+    skipNextDecorationsSaveRef.current = true;
+    setAquariumDecorations([]);
   };
 
   // ====================================================
@@ -585,6 +640,7 @@ export const AppProvider: React.FC<{
     }
 
     if (!currentUser) {
+      setFishOwnerId(null);
       setFishLoading(false);
       setFishSpecies(null);
       setFishName('');
@@ -622,6 +678,7 @@ export const AppProvider: React.FC<{
 
           const data = await response.json();
 
+          if (cancelled) return;
           if (data.fish) {
             setFishSpecies(data.fish.species);
             setFishName(data.fish.fishName);
@@ -634,6 +691,7 @@ export const AppProvider: React.FC<{
             setSubstrateColor(data.fish.substrateColor || 'natural');
             setActiveGraphicDir(data.fish.activeGraphicDir || '');
             skipNextDecorationsSaveRef.current = true;
+            decorationsOwnerRef.current = currentUser?.id ?? null;
             setAquariumDecorations(parseDecorations(data.fish.decorations));
           } else {
             setFishSpecies(null);
@@ -650,6 +708,7 @@ export const AppProvider: React.FC<{
             setAquariumDecorations([]);
           }
 
+          setFishOwnerId(currentUser.id);
           setFishLoading(false);
           return;
         } catch (error) {
@@ -776,6 +835,7 @@ export const AppProvider: React.FC<{
   // 그래픽을 한 번에 최신 상태로 맞춘다. 그래픽 갤러리에서
   // 선택/삭제한 직후처럼 즉시 반영이 필요할 때 쓴다.
   const refreshFish = async () => {
+    const ownerUserId = currentUser?.id;
     try {
       const response = await fetch(`${API_BASE}/api/fish`, {
         credentials: 'include',
@@ -788,6 +848,7 @@ export const AppProvider: React.FC<{
 
       const data = await response.json();
 
+      if (currentUserIdRef.current !== ownerUserId) return;
       if (data.fish) {
         setFishSpecies(data.fish.species);
         setFishName(data.fish.fishName);
@@ -800,6 +861,7 @@ export const AppProvider: React.FC<{
         setSubstrateColor(data.fish.substrateColor || 'natural');
         setActiveGraphicDir(data.fish.activeGraphicDir || '');
         skipNextDecorationsSaveRef.current = true;
+        decorationsOwnerRef.current = currentUser?.id ?? null;
         setAquariumDecorations(parseDecorations(data.fish.decorations));
       }
     } catch (error) {
@@ -882,7 +944,7 @@ export const AppProvider: React.FC<{
     useState(true);
 
   const [darkModeEnabled, setDarkModeEnabled] =
-    useState(false);
+    useDarkMode();
 
   const [language, setLanguage] =
     useState('한국어');
@@ -930,7 +992,7 @@ export const AppProvider: React.FC<{
         typeof item.src === 'string' &&
         Number.isFinite(item.x) &&
         Number.isFinite(item.y) &&
-        (item.layer === undefined || item.layer === 'back' || item.layer === 'front')
+        (item.layer === undefined || item.layer === 'back' || item.layer === 'middle' || item.layer === 'front')
     );
   };
 
@@ -945,31 +1007,47 @@ export const AppProvider: React.FC<{
   // 건너뛰게 한다.
   const skipNextDecorationsSaveRef = useRef(false);
 
+  const [decorationSaveStatus, setDecorationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [decorationSaveAttempt, setDecorationSaveAttempt] = useState(0);
+  const retryDecorationSave = () => setDecorationSaveAttempt(value => value + 1);
+  const decorationsOwnerRef = useRef<number | null>(null);
+  const decorationUserRef = useRef(currentUser?.id);
+  decorationUserRef.current = currentUser?.id;
+  const decorationSaveQueue = useRef<Promise<void>>(Promise.resolve());
+
   useEffect(() => {
+    let active = true;
     if (skipNextDecorationsSaveRef.current) {
       skipNextDecorationsSaveRef.current = false;
+      setDecorationSaveStatus(currentUser ? 'saved' : 'idle');
       return;
     }
-
-    // 로그인 확인/물고기 조회가 끝나기 전에 뜬 초기값([])을
-    // 저장해버리면 서버에 있던 배치를 지워버릴 수 있다.
-    if (!currentUser || fishLoading) {
+    // A new account must finish loading its own layout before any write.
+    if (!currentUser || fishLoading || decorationsOwnerRef.current !== currentUser.id) {
+      setDecorationSaveStatus('idle');
       return;
     }
-
+    const ownerUserId = currentUser.id;
+    setDecorationSaveStatus('saving');
     const timeoutId = window.setTimeout(() => {
-      fetch(`${API_BASE}/api/aquarium-decorations`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decorations: aquariumDecorations }),
-      }).catch((error) => {
-        console.error('❌ 어항 배치 저장 실패:', error);
+      // Serialize writes so a slow old request cannot overwrite a newer layout.
+      decorationSaveQueue.current = decorationSaveQueue.current.then(async () => {
+        if (!active || decorationUserRef.current !== ownerUserId) return;
+        try {
+          const response = await fetch(`${API_BASE}/api/aquarium-decorations`, {
+            method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decorations: aquariumDecorations, ownerUserId }),
+          });
+          const data = await response.json();
+          if (!response.ok || !data.success) throw new Error('배치 저장 실패');
+          if (active && decorationUserRef.current === ownerUserId) setDecorationSaveStatus('saved');
+        } catch {
+          if (active && decorationUserRef.current === ownerUserId) setDecorationSaveStatus('error');
+        }
       });
     }, 800);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [aquariumDecorations]);
+    return () => { active = false; window.clearTimeout(timeoutId); };
+  }, [aquariumDecorations, currentUser?.id, fishLoading, decorationSaveAttempt]);
 
   // ====================================================
   // 수온 제어
@@ -1220,6 +1298,9 @@ export const AppProvider: React.FC<{
   // ====================================================
 
   useEffect(() => {
+    if (!currentUser) { setAlerts([]); return; }
+    let active = true;
+    const controller = new AbortController();
 
     const loadAlerts = async () => {
 
@@ -1232,7 +1313,7 @@ export const AppProvider: React.FC<{
         const response =
           await fetch(
             `${API_URL}/api/alerts`,
-            { credentials: 'include' }
+            { credentials: 'include', cache: 'no-store', signal: controller.signal }
           );
 
         if (!response.ok) {
@@ -1257,7 +1338,10 @@ export const AppProvider: React.FC<{
               }))
             : [];
 
-        setAlerts(loadedAlerts);
+        if (active) setAlerts(previous => {
+          const ids = new Set(loadedAlerts.map(alert => alert.id));
+          return [...previous.filter(alert => !ids.has(alert.id)), ...loadedAlerts].sort((a, b) => b.id - a.id);
+        });
 
         console.log(
           '📋 DB 알람 기록 불러오기:',
@@ -1277,7 +1361,8 @@ export const AppProvider: React.FC<{
 
     loadAlerts();
 
-  }, []);
+    return () => { active = false; controller.abort(); };
+  }, [currentUser?.id, refreshEpoch]);
 
   // ====================================================
   // 센서별 마지막 알람 발생 시간
@@ -1326,11 +1411,12 @@ export const AppProvider: React.FC<{
       return;
     }
 
+    const controller = new AbortController();
     const hydrateLatestSensorData = async () => {
       try {
         const response = await fetch(
           `${API_BASE}/api/sensor-data/latest`,
-          { credentials: 'include' }
+          { credentials: 'include', cache: 'no-store', signal: controller.signal }
         );
 
         if (!response.ok) {
@@ -1338,6 +1424,7 @@ export const AppProvider: React.FC<{
         }
 
         const data = await response.json();
+        if (controller.signal.aborted) return;
         const row = data?.data;
 
         if (!row) {
@@ -1360,7 +1447,8 @@ export const AppProvider: React.FC<{
     };
 
     hydrateLatestSensorData();
-  }, [currentUser]);
+    return () => controller.abort();
+  }, [currentUser?.id, refreshEpoch]);
 
   // ====================================================
   // Live Render (admin 물리 어항 원본 영상)
@@ -1374,11 +1462,12 @@ export const AppProvider: React.FC<{
       return;
     }
 
+    const controller = new AbortController();
     const hydrateLiveFrame = async () => {
       try {
         const response = await fetch(
           `${API_BASE}/api/live-camera-frame`,
-          { credentials: 'include' }
+          { credentials: 'include', cache: 'no-store', signal: controller.signal }
         );
 
         if (!response.ok) {
@@ -1387,6 +1476,7 @@ export const AppProvider: React.FC<{
 
         const data = await response.json();
 
+        if (controller.signal.aborted) return;
         if (data?.image) {
           setAdminLiveFrame(data.image);
         }
@@ -1396,7 +1486,8 @@ export const AppProvider: React.FC<{
     };
 
     hydrateLiveFrame();
-  }, [currentUser]);
+    return () => controller.abort();
+  }, [currentUser?.id, refreshEpoch]);
 
   const [hourlyAverages, setHourlyAverages] =
     useState<HourlyAverage[]>([]);
@@ -1411,6 +1502,16 @@ export const AppProvider: React.FC<{
   //
   // 6개 = 1시간
   // ====================================================
+
+  useEffect(() => {
+    setSensorData(null);
+    setDisplaySensorData(null);
+    setSensorHistory([]);
+    setHourlyAverage(null);
+    setHourlyAverages([]);
+    setAdminLiveFrame(null);
+    setAlerts([]);
+  }, [currentUser?.id]);
 
   const sensorBufferRef =
     useRef<DisplaySensorData[]>([]);
@@ -1445,7 +1546,7 @@ export const AppProvider: React.FC<{
     console.log('');
 
     const socket =
-      new WebSocket(WS_URL);
+      new ReconnectingSocket(WS_URL);
     let disposed = false;
 
     // ==================================================
@@ -1464,6 +1565,7 @@ export const AppProvider: React.FC<{
       );
 
       setIsWebSocketConnected(true);
+      window.dispatchEvent(new Event('cft:refresh'));
     };
 
     // ==================================================
@@ -2237,6 +2339,8 @@ export const AppProvider: React.FC<{
 
     currentUser,
     authLoading,
+    authError,
+    refreshConnection,
     login,
     signup,
     logout,
@@ -2255,7 +2359,7 @@ export const AppProvider: React.FC<{
     setFishName,
 
     fishSpecies,
-    fishLoading,
+    fishLoading: fishLoading || Boolean(currentUser && fishOwnerId !== currentUser.id),
     updateFish,
     fishColorHue,
     fishColorRgb,
@@ -2299,6 +2403,8 @@ export const AppProvider: React.FC<{
 
     aquariumDecorations,
     setAquariumDecorations,
+    decorationSaveStatus,
+    retryDecorationSave,
 
     // --------------------------------------------------
     // 수온

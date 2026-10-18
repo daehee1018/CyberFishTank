@@ -1,7 +1,8 @@
+import { trackedFetch as fetch } from '../services/requestActivity';
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import FishSprite from './FishSprite';
-import { PART_NAMES } from '../lib/fishRig';
+import { moveRigPart, PART_NAMES } from '../lib/fishRig';
 import type { FishRig, Point, Rect, RigPart, RigSource, Strength } from '../lib/fishRig';
 import './FishVisuals.css';
 
@@ -68,14 +69,7 @@ export default function RigEditor({ graphicId, onClose }: { graphicId: number; o
     if (drag.handle === 'draw') setRect(drag.part, [Math.min(sx, p[0], .99), Math.min(sy, p[1], .99), Math.max(.01, Math.abs(p[0] - sx)), Math.max(.01, Math.abs(p[1] - sy))]);
     else if (drag.handle === 'move') {
       const nx = clamp(x + p[0] - sx, 0, 1 - w), ny = clamp(y + p[1] - sy, 0, 1 - h);
-      // Translate attachment points with the selected region.
-      setRig(current => {
-        if (!current || !current[drag.part]) return current;
-        const value = current[drag.part]!;
-        const dx = nx - value.rect[0], dy = ny - value.rect[1];
-        const move = ([px, py]: Point): Point => [clamp(px + dx), clamp(py + dy)];
-        return { ...current, [drag.part]: { ...value, rect: [nx, ny, w, h], ...('root' in value ? { root: move(value.root) } : {}), ...('rootLine' in value ? { rootLine: value.rootLine.map(move) } : {}) } } as FishRig;
-      });
+      setRig(current => current ? moveRigPart(current, drag.part, nx, ny) : current);
     } else if (drag.handle === 'size') setRect(drag.part, [x, y, clamp(p[0] - x, .01, 1 - x), clamp(p[1] - y, .01, 1 - y)]);
     else setRig(current => {
       if (!current || !current[drag.part]) return current;
@@ -97,7 +91,8 @@ export default function RigEditor({ graphicId, onClose }: { graphicId: number; o
     const dy = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0;
     if (handle === 'move' || handle === 'size') {
       const [x, y, w, h] = rig[key]!.rect;
-      setRect(key, handle === 'move' ? [clamp(x + dx, 0, 1 - w), clamp(y + dy, 0, 1 - h), w, h] : [x, y, clamp(w + dx, .01, 1 - x), clamp(h + dy, .01, 1 - y)]);
+      if (handle === 'move') setRig(current => current ? moveRigPart(current, key, x + dx, y + dy) : current);
+      else setRect(key, [x, y, clamp(w + dx, .01, 1 - x), clamp(h + dy, .01, 1 - y)]);
     } else setRig(current => {
       if (!current) return current;
       const value = current[key];

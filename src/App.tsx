@@ -13,7 +13,7 @@ import Admin from './pages/Admin/Admin';
 import { useAppContext } from './context/AppContext';
 
 function RequireAuth() {
-  const { currentUser, authLoading, fishSpecies, fishLoading } = useAppContext();
+  const { currentUser, authLoading, authError, refreshConnection, fishSpecies, fishLoading } = useAppContext();
   const location = useLocation();
 
   if (authLoading) {
@@ -22,6 +22,10 @@ function RequireAuth() {
         불러오는 중...
       </div>
     );
+  }
+
+  if (!currentUser && authError) {
+    return <main className="cft-connection-page"><img src="/icons/icon-192.png" alt="" /><h1>어항에 연결하는 중입니다</h1><p>{authError}</p><button type="button" onClick={refreshConnection}>다시 연결</button></main>;
   }
 
   if (!currentUser) {

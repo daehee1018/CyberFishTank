@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type IconName = 'fish' | 'grid' | 'chart' | 'pen' | 'settings' | 'flask' | 'bell' | 'logout' | 'temperature' | 'water' | 'waves' | 'camera' | 'arrow';
+export type IconName = 'fish' | 'grid' | 'chart' | 'pen' | 'settings' | 'flask' | 'bell' | 'logout' | 'temperature' | 'water' | 'waves' | 'camera' | 'arrow' | 'expand' | 'collapse';
 const paths: Record<IconName, ReactNode> = {
   fish: <><path d="M7 8C11 3 17 5 21 12c-4 7-10 9-14 4l-5 3 2-7-2-7 5 3Z" /><circle cx="16" cy="11" r=".8" /><path d="m10 7 1-3m-1 13 1 3" /></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
@@ -15,6 +15,8 @@ const paths: Record<IconName, ReactNode> = {
   waves: <path d="M2 6c3-5 5 5 10 0s7 5 10 0M2 12c3-5 5 5 10 0s7 5 10 0M2 18c3-5 5 5 10 0s7 5 10 0" />,
   camera: <><path d="M9 5h6l2 3h4v13H3V8h4l2-3Z" /><circle cx="12" cy="14" r="4" /></>,
   arrow: <path d="M4 12h16m-6-6 6 6-6 6" />,
+  expand: <path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5" />,
+  collapse: <path d="M3 8h5V3m8 0v5h5M8 21v-5H3m18 0h-5v5" />,
 };
 
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
@@ -26,7 +28,7 @@ export function PageHeading({ title, description }: { title: string; description
 }
 
 export function AquariumIllustration() {
-  return <svg className="cft-aquarium-illustration" viewBox="0 0 600 340" role="img" aria-label="수초 사이를 헤엄치는 분홍색 베타 물고기">
+  return <svg className="cft-aquarium-illustration" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid slice" role="img" aria-label="수초 사이를 헤엄치는 분홍색 베타 물고기">
     <defs><linearGradient id="story-water" x2=".6" y2="1"><stop stopColor="#e5f5ef" /><stop offset="1" stopColor="#b7ded9" /></linearGradient><linearGradient id="story-fin"><stop stopColor="#ed7780" /><stop offset="1" stopColor="#d6879c" /></linearGradient></defs>
     <rect width="600" height="340" fill="url(#story-water)" />
     <path d="M0 48Q270 80 600 28M0 315Q160 278 300 313T600 308" fill="none" stroke="#fff" strokeOpacity=".23" strokeWidth="3" />

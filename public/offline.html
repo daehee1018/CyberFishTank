@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#58b9d8">
+  <title>연결 확인 · CyberFishTank</title>
+  <style>
+    @font-face{font-family:Pretendard;src:url('/fonts/PretendardVariable.woff2') format('woff2');font-display:swap}
+    *{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:32px 20px;background:#f5f8f8;color:#31585e;font-family:Pretendard,system-ui,sans-serif}main{width:100%;max-width:420px;padding:36px 24px;border:1px solid #dcebe9;border-radius:24px;background:white;text-align:center}img{width:80px;height:80px;border-radius:20px}h1{font-size:23px;line-height:1.5;margin:24px 0 12px}p{font-size:14px;line-height:1.8;color:#5c777d}button{min-height:48px;margin-top:16px;padding:12px 28px;border:0;border-radius:12px;background:#07868b;color:white;font:inherit;cursor:pointer}button:focus-visible{outline:3px solid #31585e;outline-offset:4px}small{display:block;margin-top:20px;font-size:12px;line-height:1.7;color:#7a9094}
+  </style>
+</head>
+<body><main>
+  <img src="/icons/icon-192.png" alt="">
+  <h1>어항에 연결할 수 없습니다</h1>
+  <p>인터넷 연결이나 서버 상태를 확인해주세요.<br>연결이 복구되면 다시 어항을 확인할 수 있어요.</p>
+  <button type="button" id="retry">다시 연결</button>
+  <small>실시간 센서·카메라 조회와 급이 조작에는<br>서버 연결이 필요합니다.</small>
+</main><script>
+  document.getElementById('retry').addEventListener('click', () => location.reload());
+  window.addEventListener('online', () => location.reload());
+</script></body>
+</html>

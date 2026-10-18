@@ -1,0 +1,129 @@
+/* The same preference and palette apply to desktop, mobile, dialogs and auth. */
+:root { color-scheme: light; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --cft-canvas: #101b22;
+  --cft-surface: #182831;
+  --cft-raised: #20343e;
+  --cft-ink: #deebee;
+  --cft-muted: #a1b8bf;
+  --cft-teal: #087e84;
+  --cft-accent: #75d5d0;
+  --cft-line: #344c57;
+  --cft-selected: #203f43;
+  --cft-success-bg: #193c32;
+  --cft-success-text: #9bd8b8;
+  --cft-warning-bg: #40351f;
+  --cft-warning-text: #f0ce89;
+  --cft-danger-bg: #432c32;
+  --cft-danger-text: #ffb5b1;
+  --cft-chart-grid: #344c57;
+  --cft-chart-label: #a1b8bf;
+
+  /* Existing Tailwind components share the application palette. Keep white
+     text, illustrations, color swatches and aquarium themes in their colors. */
+  --color-slate-50: #20343e;
+  --color-slate-100: #233944;
+  --color-slate-200: #344c57;
+  --color-slate-300: #506b76;
+  --color-slate-400: #99b0ba;
+  --color-slate-500: #a1b8bf;
+  --color-slate-600: #bed0d6;
+  --color-slate-700: #cadce1;
+  --color-slate-800: #d7e6eb;
+  --color-slate-900: #deebee;
+  --color-teal-50: #193c38;
+  --color-teal-100: #244d48;
+  --color-teal-600: #64cbc5;
+  --color-teal-700: #88ded3;
+  --color-red-50: #432c32;
+  --color-red-100: #4e3036;
+  --color-red-200: #7e4a50;
+  --color-red-500: #ff9e9b;
+  --color-red-600: #ffb5b1;
+  --color-rose-500: #ff9bb4;
+  --color-sky-600: #89caff;
+  background: var(--cft-canvas);
+  color: var(--cft-ink);
+}
+
+:root[data-theme="dark"] :is(body, .cft-shell, .cft-mobile, .cft-auth-page, .cft-fish-select-page, .cft-pwa-notices) {
+  background: var(--cft-canvas);
+  color: var(--cft-ink);
+}
+:root[data-theme="dark"] :is(.cft-sidebar, .cft-mobile-header, .cft-mobile-nav, .cft-mobile-account-menu, .cft-panel, .cft-stat-card, .cft-calendar-panel > section, .cft-mobile-auth-form, .cft-notification, .cft-record-chart-message, .rig-dialog, .rig-footer, .bg-white) {
+  background: var(--cft-surface);
+  border-color: var(--cft-line);
+  color: var(--cft-ink);
+}
+:root[data-theme="dark"] .bg-white\/70 { background-color: #182831b3; }
+:root[data-theme="dark"] :is(.cft-button, .cft-tabs > button, .cft-select, .cft-camera-controls select, .cft-decoration-option, .cft-fish-select-card .cft-species-option, .cft-species-back a) {
+  background: var(--cft-surface);
+  color: var(--cft-ink);
+  border-color: var(--cft-line);
+}
+:root[data-theme="dark"] :is(.cft-button, .cft-tabs > button, .cft-decoration-option):hover {
+  background: var(--cft-raised);
+  border-color: #59828c;
+}
+:root[data-theme="dark"] :is(.cft-tank-summary, .cft-feeder-stats > div, .cft-editor-hint, .cft-user-table thead, .cft-test-alert, .cft-mobile-user-list, .cft-sensor-connection, .cft-mobile-account-menu a, .cft-mobile-account-menu button, .cft-species-option > span:nth-child(3)) {
+  background: var(--cft-raised);
+  color: var(--cft-muted);
+}
+:root[data-theme="dark"] :is(.cft-field input, .cft-field select, .cft-auth-form input, .cft-mobile-auth input, .cft-rgb-channel input[type="number"], .rig-controls select) {
+  background: var(--cft-canvas);
+  border-color: var(--cft-line);
+  color: var(--cft-ink);
+}
+:root[data-theme="dark"] input::placeholder { color: var(--cft-muted); opacity: 1; }
+:root[data-theme="dark"] :is(.cft-field input, .cft-field select):focus { border-color: var(--cft-accent); box-shadow: 0 0 0 3px #75d5d026; }
+:root[data-theme="dark"] :is(button, a, input, select):focus-visible { outline-color: var(--cft-accent); }
+
+/* Headings and values use the brighter ink; supporting text stays readable. */
+:root[data-theme="dark"] :is(.cft-brand, .cft-mobile-brand, .cft-page-heading h1, .cft-panel-heading h2, .cft-admin-page h3, .cft-connection-page, .cft-stat-value, .cft-feeder-stats strong, .cft-record-current strong, .cft-alert-row strong, .cft-user-row strong, .cft-mobile-user-list strong, .cft-tank-name, .cft-mobile-account-menu strong, .cft-auth-heading h1, .cft-species-heading h1, .cft-species-heading > div:first-child, .cft-species-option > span:nth-child(2), .cft-record-chart-detail strong, .cft-user-table td:first-child) {
+  color: var(--cft-ink);
+}
+:root[data-theme="dark"] :is(.cft-caption, .cft-page-heading p, .cft-topbar, .cft-tank-label, .cft-nav-link, .cft-sidebar-bottom, .cft-stat-label, .cft-stat-card p, .cft-feeder-stats span, .cft-twin-footer, .cft-twin-footer small, .cft-record-current span, .cft-record-chart-detail, .cft-alert-row p, .cft-alert-row time, .cft-pagination, .cft-field, .cft-toggle-row p, .cft-user-table, .cft-editor-footer, .cft-rgb-channel, .cft-sensor-info p, .cft-theme-options > div > div:first-child, .cft-style-panel > .space-y-3 > div:first-child, .cft-auth-form form label, .cft-mobile-auth form label, .cft-auth-heading p, .cft-auth-form > div:last-child, .cft-mobile-auth-form > div:last-child, .cft-species-heading > div:last-child, .rig-heading p, .rig-hint) {
+  color: var(--cft-muted);
+}
+/* These legacy content rules use !important in index.css. */
+:root[data-theme="dark"] .cft-content .text-slate-900 { color: var(--cft-ink) !important; }
+:root[data-theme="dark"] .cft-content .border-slate-200 { border-color: var(--cft-line) !important; }
+:root[data-theme="dark"] .cft-content .bg-slate-50 { background-color: var(--cft-raised) !important; }
+:root[data-theme="dark"] :is(.cft-text-link, .cft-twin-footer button, .cft-user-row button, .cft-auth-form > div:last-child a, .cft-mobile-auth-form > div:last-child a) { color: var(--cft-accent); }
+:root[data-theme="dark"] :is(.cft-sidebar, .cft-brand, .cft-user-row, .cft-mobile-header, .cft-mobile-nav, .cft-alert-row, .cft-alert-list, .cft-user-table td, .cft-theme-options > div + div, .cft-style-panel > .space-y-3, .rig-controls) { border-color: var(--cft-line); }
+
+:root[data-theme="dark"] :is(.cft-nav-link.is-active, .cft-nav-link:hover, .cft-mobile-nav a.is-active > span, .cft-mobile-account summary, .cft-avatar, .cft-fish-select-card .cft-species-option[aria-pressed="true"], .rig-part-tabs .is-selected) {
+  background: var(--cft-selected);
+  color: var(--cft-accent);
+}
+:root[data-theme="dark"] .cft-mobile-nav a { color: var(--cft-muted); }
+:root[data-theme="dark"] .cft-mobile-nav a.is-active { color: var(--cft-accent); }
+:root[data-theme="dark"] :is(.cft-button.is-primary, .cft-tabs > button.is-active, .cft-theme-options button[aria-pressed="true"], .cft-pollution-options button:last-child, .cft-mobile-auth button[type="submit"], .cft-auth-form button[type="submit"], .bg-slate-900) {
+  background: var(--cft-teal);
+  border-color: var(--cft-teal);
+  color: #fff;
+}
+:root[data-theme="dark"] :is(.cft-button.is-primary, .cft-tabs > button.is-active, .cft-auth-form button[type="submit"], .hover\:bg-slate-800):hover { background: #096b71; }
+:root[data-theme="dark"] .cft-button:disabled { background: #293c45; border-color: #344c57; color: #9aafb8; }
+:root[data-theme="dark"] .cft-switch { background: #506771; }
+:root[data-theme="dark"] .cft-switch.is-on { background: var(--cft-teal); }
+
+:root[data-theme="dark"] :is(.cft-badge.is-success, .cft-feeder-message, .cft-pollution-options button:nth-child(1)) { background: var(--cft-success-bg); color: var(--cft-success-text); }
+:root[data-theme="dark"] .cft-species-option[aria-pressed="true"] > span:nth-child(3) { background: var(--cft-success-bg); color: var(--cft-success-text); }
+:root[data-theme="dark"] :is(.cft-badge.is-warning, .cft-feeder-message.is-warning, .cft-alert-icon, .cft-pollution-options button:nth-child(2), .cft-pwa-notice.is-connection) { background: var(--cft-warning-bg); color: var(--cft-warning-text); }
+:root[data-theme="dark"] :is(.cft-badge.is-danger, .cft-error, .cft-delete-button, .cft-pollution-options button:nth-child(3)) { background: var(--cft-danger-bg); color: var(--cft-danger-text); }
+:root[data-theme="dark"] .cft-badge.is-neutral { background: var(--cft-raised); color: var(--cft-muted); }
+:root[data-theme="dark"] :is(.cft-notice, .cft-pwa-notice) { background: var(--cft-selected); color: #ade4df; border-color: var(--cft-line); }
+:root[data-theme="dark"] .cft-pwa-notice.is-update { background: #21374e; }
+:root[data-theme="dark"] .cft-pwa-dismiss { color: var(--cft-muted); }
+:root[data-theme="dark"] .cft-decoration-save { color: var(--cft-muted); }
+:root[data-theme="dark"] .cft-decoration-save[data-save-state="error"] { color: var(--cft-danger-text); }
+
+/* Preserve the fullscreen viewer's dedicated palette and camera imagery. */
+:root[data-theme="dark"] .cft-twin-panel.is-expanded { background: #0c2026; }
+:root[data-theme="dark"] .cft-twin-panel.is-expanded .cft-panel-heading h2 { color: #e2f1ef; }
+:root[data-theme="dark"] .cft-twin-panel.is-expanded .cft-camera-controls .cft-button { background: #ffffff0d; color: #e2f1ef; border-color: #63878670; }
+:root[data-theme="dark"] .cft-live-aquarium.is-live { background: var(--cft-canvas); }
+:root[data-theme="dark"] .cft-mobile-auth { background: var(--cft-canvas); }
+:root[data-theme="dark"] .cft-fish-select-card { background: transparent; }

@@ -1,3 +1,5 @@
+import useOnline from '../../hooks/useOnline';
+import { trackedFetch as fetch } from '../../services/requestActivity';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { Fish2D } from '../../components/Fish2D';
@@ -5,6 +7,9 @@ import Aquarium from '../../components/Aquarium';
 import FeedingCalendar from '../../components/FeedingCalendar';
 import { Link } from 'react-router-dom';
 import { Icon, PageHeading } from '../../components/UI';
+import useIsMobile from '../../hooks/useIsMobile';
+import useElementFullscreen from '../../hooks/useElementFullscreen';
+import './fullscreen.css';
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
@@ -48,7 +53,12 @@ const Dashboard: React.FC = () => {
   // Dashboard에서는 fishData만 가져온다.
   // ====================================================
 
+  const isMobile = useIsMobile();
+  const online = useOnline();
+  const landscapeOnly = isMobile && (navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches);
+  const { elementRef: viewerRef, expanded, needsLandscape, toggleFullscreen } = useElementFullscreen({ landscapeOnly });
   const {
+    tankName, fishName, fishSpecies,
     isLiveMode,
     setIsLiveMode,
     fishData,
@@ -62,6 +72,7 @@ const Dashboard: React.FC = () => {
     pollutionPreview,
     alerts,
     sensorRanges,
+    isWebSocketConnected,
   } = useAppContext();
 
   // 물리 어항 영상은 admin 소유다. 다른 계정은 본인 카메라를
@@ -94,37 +105,58 @@ const Dashboard: React.FC = () => {
   } | null>(null);
 
   const [feederStatus, setFeederStatus] = useState<FeederStatus | null>(null);
+  const [feederAvailable, setFeederAvailable] = useState(false);
   const [feederError, setFeederError] = useState('');
   const [feederRequesting, setFeederRequesting] = useState(false);
 
   useEffect(() => {
     let active = true;
 
+    let loading = false;
+    let controller: AbortController | undefined;
     const loadFeederStatus = async () => {
+      if (loading || !navigator.onLine || document.visibilityState !== 'visible') return;
+      loading = true;
+      controller = new AbortController();
+      const timeout = setTimeout(() => controller?.abort(), 5000);
       try {
         const response = await fetch(`${API_BASE}/api/feeder/status`, {
+          signal: controller.signal,
           credentials: 'include',
           cache: 'no-store',
         });
         const data = await response.json();
         if (active && response.ok && data.success) {
           setFeederStatus(data);
-          setFeederError('');
-        }
+          setFeederAvailable(true);
+        } else if (active) setFeederAvailable(false);
       } catch (error) {
+        if (active) setFeederAvailable(false);
         console.error('❌ 급식기 상태 조회 실패:', error);
-      }
+      } finally { clearTimeout(timeout); loading = false; }
     };
 
     loadFeederStatus();
+    const resume = () => {
+      setFeederAvailable(false);
+      void loadFeederStatus();
+    };
+    window.addEventListener('online', resume);
+    window.addEventListener('offline', resume);
+    document.addEventListener('visibilitychange', resume);
     const intervalId = window.setInterval(loadFeederStatus, 1000);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      controller?.abort();
+      window.removeEventListener('online', resume);
+      window.removeEventListener('offline', resume);
+      document.removeEventListener('visibilitychange', resume);
     };
   }, []);
 
   const requestFeederCommand = async (command: 'feed' | 'reset') => {
+    if (feederRequesting || !navigator.onLine || !feederAvailable || !feederStatus?.online) return;
     if (command === 'reset' && !window.confirm('급식기를 초기화하시겠습니까?')) {
       return;
     }
@@ -148,7 +180,7 @@ const Dashboard: React.FC = () => {
       });
     } catch (error) {
       console.error('❌ 급식기 명령 요청 실패:', error);
-      setFeederError('급식기 명령 요청에 실패했습니다.');
+      setFeederError('명령 결과를 확인하지 못했습니다. 마지막 급여와 급식기 상태를 확인해주세요. 명령은 자동 재전송하지 않습니다.');
     } finally {
       setFeederRequesting(false);
     }
@@ -452,16 +484,11 @@ const Dashboard: React.FC = () => {
   const statIcons = ['temperature', 'flask', 'waves', 'water'] as const;
   const statDescriptions = [ `적정 범위 ${sensorRanges.temperatureMin}–${sensorRanges.temperatureMax}°C`, `적정 범위 ${sensorRanges.phMin}–${sensorRanges.phMax}`, '어항의 물 높이를 확인해요', '평소 어항 상태와 비교해요'];
 
-  return (
-    <div className="cft-dashboard-page">
-      <PageHeading title="내 어항 대시보드" description="물고기와 어항의 상태를 한눈에 확인하세요." />
-      {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
-      <div className="cft-dashboard-grid">
-        <div className="cft-dashboard-main">
-          <section className="cft-panel cft-twin-panel">
-            <div className="cft-panel-heading"><h2>실시간 디지털 트윈</h2><div className="cft-camera-controls">
+  // Share the actual controls and live renderer across two distinct page layouts.
+  const twinPanel = (<section ref={viewerRef} className={`cft-panel cft-twin-panel${expanded ? ' is-expanded' : ''}${needsLandscape ? ' needs-landscape' : ''}`} role={expanded ? 'dialog' : undefined} aria-modal={expanded || undefined} aria-label={expanded ? '어항 전체화면' : undefined}>
+            <div className="cft-panel-heading"><div><h2>{expanded ? isLiveMode ? 'Live Render' : 'Digital Twin' : '실시간 디지털 트윈'}</h2>{isMobile && <span className="cft-badge is-success cft-mobile-live-badge">LIVE</span>}</div><div className="cft-camera-controls">
               {!useMyCamera && availableCameras.length > 1 && <select aria-label="카메라 선택" value={selectedCameraId} onChange={event => setSelectedCameraId(event.target.value)}><option value="">기본 카메라</option>{availableCameras.map((camera, index) => <option key={camera.deviceId} value={camera.deviceId}>{camera.label || `카메라 ${index + 1}`}</option>)}</select>}
-              <button className="cft-button" onClick={() => setIsLiveMode(!isLiveMode)}>{isLiveMode ? 'Digital Twin' : 'Live Render'} <Icon name="arrow" /></button>
+              <button className="cft-button cft-mode-button" onClick={() => setIsLiveMode(!isLiveMode)}>{isLiveMode ? 'Digital Twin' : 'Live Render'} <Icon name="arrow" /></button>
               <button className="cft-button" onClick={useMyCamera ? stopMyCamera : startMyCamera}><Icon name="camera" />{useMyCamera ? '카메라 끄기' : '카메라 켜기'}</button>
             </div></div>
             {myCameraError && <p role="alert" className="cft-error">{myCameraError}</p>}
@@ -509,7 +536,7 @@ const Dashboard: React.FC = () => {
                       bg-white
                       object-contain
                     "
-                    alt="실시간 어항 카메라"
+                    alt={isWebSocketConnected && online ? "실시간 어항 카메라" : "마지막으로 수신한 어항 카메라 화면"}
                   />
 
                 ) : (
@@ -531,6 +558,8 @@ const Dashboard: React.FC = () => {
 
               ) : null}
 
+              {isLiveMode && (!online || !isWebSocketConnected) && <div className="absolute bottom-3 left-3 z-20 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">연결 복구 중 · 마지막 수신 영상</div>}
+
               {/* 내 카메라 영상. 프레임 캡처가 끊기지 않도록 라이브/트윈
                   모드와 상관없이 항상 마운트해두고, 크기만 바꾼다. */}
               <video
@@ -545,11 +574,13 @@ const Dashboard: React.FC = () => {
                   }
                 />
               <canvas ref={myCaptureCanvasRef} className="hidden" />
+              <button type="button" className="cft-fullscreen-toggle" aria-label={expanded ? '전체화면 닫기' : '전체화면 보기'} title={expanded ? '전체화면 닫기 (Esc)' : '전체화면 보기'} aria-expanded={expanded} onClick={toggleFullscreen}><Icon name={expanded ? 'collapse' : 'expand'} /><span>{expanded ? '닫기' : '전체화면'}</span></button>
 
             </div>
-            <div className="cft-twin-footer"><span><Icon name="camera" />{useMyCamera ? '내 카메라 연결됨 · 실시간 추적 중' : isLiveMode ? '실시간 카메라 화면' : '실시간 상태 · 디지털 어항'}</span></div>
-          </section>
-          <div className="cft-stat-grid">
+            <div className="cft-twin-footer">{isMobile ? <span><strong>{fishName}</strong><small>{fishSpecies === 'betta' ? '베타' : fishSpecies}</small></span> : <span><Icon name="camera" />{useMyCamera ? '내 카메라 연결됨 · 실시간 추적 중' : isLiveMode ? '실시간 카메라 화면' : '실시간 상태 · 디지털 어항'}</span>}{expanded && <span className="cft-fullscreen-status" role="status">{!online || !isWebSocketConnected ? '연결 복구 중 · 마지막 수신 상태' : isMobile ? '실시간 연결됨' : 'Esc 또는 닫기로 돌아가기'}</span>}</div>
+            {needsLandscape && <div className="cft-landscape-guide" role="status"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="22" y="14" width="20" height="36" rx="4" /><path d="M27 19h10M30 44h4M11 27a22 22 0 0 1 38-12m-1-8 2 9-9-1M53 37a22 22 0 0 1-38 12m1 8-2-9 9 1" /></svg><h3>가로로 돌려주세요</h3><p>어항 전체화면은 가로 방향으로 볼 수 있어요.</p></div>}
+          </section>);
+  const statsPanel = (<div className="cft-stat-grid">
             {bottomStats.map((item, index) => (
               <section className="cft-stat-card" key={item.label}>
                 <div className="cft-stat-label">
@@ -560,23 +591,40 @@ const Dashboard: React.FC = () => {
                 <p>{statDescriptions[index]}</p>
               </section>
             ))}
-          </div>
-        </div>
-        <div className="cft-dashboard-sidebar">
-          <section className="cft-panel cft-feeder-panel">
+          </div>);
+  const feederPanel = (<section className="cft-panel cft-feeder-panel">
             <div className="cft-panel-heading"><h2>자동 급식기</h2><span className={`cft-badge ${feederStatus?.online ? 'is-success' : 'is-neutral'}`}>{feederStatus?.online ? '온라인' : '오프라인'}</span></div>
             <p className="cft-caption cft-feeder-connection">{feederStatus?.online ? 'RP2040 연결됨' : 'RP2040 연결 대기'}</p>
             <div className="cft-feeder-stats"><div><span>급여 횟수</span><strong>{feederStatus?.feed_count ?? 0} / 2</strong></div><div><span>현재 위치</span><strong>{feederStatus?.angle ?? 0}°</strong></div></div>
             <div className={`cft-feeder-message ${(feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2) ? 'is-warning' : ''}`}>{feederStatus?.last_command_status === 'queued' ? '급여 명령 전송 대기 중...' : (feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2) ? '오늘 2회 급여를 완료했어요. 다시 사용하려면 초기화해주세요.' : '물고기에게 먹이를 줄 수 있어요.'}</div>
             {formatLastFeedTime(feederStatus?.last_feed_at) && <p className="cft-caption cft-feeder-last-feed">마지막 급여: {formatLastFeedTime(feederStatus?.last_feed_at)}</p>}
+            {(!online || !feederAvailable) && <p className="cft-caption">서버 연결과 급식기 상태를 확인한 후 조작할 수 있어요.</p>}
             {feederError && <p className="cft-error" role="alert">{feederError}</p>}
-            <div className="cft-feeder-actions"><button className="cft-button is-primary" onClick={() => requestFeederCommand('feed')} disabled={feederRequesting || feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2 || feederStatus?.last_command_status === 'queued'}>밥 주기</button><button className="cft-button" onClick={() => requestFeederCommand('reset')} disabled={feederRequesting || feederStatus?.last_command_status === 'queued'}>초기화</button></div>
-          </section>
-          <div className="cft-calendar-panel"><FeedingCalendar key={currentUser?.id} apiBase={API_BASE} lastFeedAt={feederStatus?.last_feed_at ?? null} /></div>
-          <section className="cft-panel cft-recent-alerts"><div className="cft-panel-heading"><h2>최근 알림</h2><Link to="/records" state={{ tab: '알림' }} className="cft-text-link">전체 보기</Link></div>
+            <div className="cft-feeder-actions"><button className="cft-button is-primary" onClick={() => requestFeederCommand('feed')} disabled={!online || !feederAvailable || !feederStatus?.online || feederRequesting || feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2 || feederStatus?.last_command_status === 'queued'}>밥 주기</button><button className="cft-button" onClick={() => requestFeederCommand('reset')} disabled={!online || !feederAvailable || !feederStatus?.online || feederRequesting || feederStatus?.last_command_status === 'queued'}>초기화</button></div>
+          </section>);
+  const calendarPanel = (<div className="cft-calendar-panel"><FeedingCalendar key={currentUser?.id} apiBase={API_BASE} lastFeedAt={feederStatus?.last_feed_at ?? null} /></div>);
+  const alertsPanel = (<section className="cft-panel cft-recent-alerts"><div className="cft-panel-heading"><h2>최근 알림</h2><Link to="/records" state={{ tab: '알림' }} className="cft-text-link">전체 보기</Link></div>
             {alerts.length ? alerts.slice(0, 2).map(alert => <div className="cft-alert-row" key={alert.id}><span className="cft-alert-icon"><Icon name="bell" /></span><div><strong>{alert.title}</strong><p>{alert.detail}</p><time>{alert.time}</time></div></div>) : <div className="cft-empty">새로운 알림이 없습니다.</div>}
-          </section>
-        </div>
+          </section>);
+
+  if (isMobile) return (
+    <div className="cft-mobile-dashboard">
+      <PageHeading title="내 어항 대시보드" description={tankName} />
+      {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
+      {twinPanel}
+      {feederPanel}
+      {statsPanel}
+      {calendarPanel}
+    </div>
+  );
+
+  return (
+    <div className="cft-dashboard-page">
+      <PageHeading title="내 어항 대시보드" description="물고기와 어항의 상태를 한눈에 확인하세요." />
+      {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
+      <div className="cft-dashboard-grid">
+        <div className="cft-dashboard-main">{twinPanel}{statsPanel}</div>
+        <div className="cft-dashboard-sidebar">{feederPanel}{calendarPanel}{alertsPanel}</div>
       </div>
     </div>
   );

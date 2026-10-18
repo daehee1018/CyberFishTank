@@ -766,6 +766,9 @@ const MAX_DECORATIONS = 100;
 
 app.post('/api/aquarium-decorations', requireAuth, (req, res) => {
   const { decorations } = req.body || {};
+  if (req.body?.ownerUserId !== undefined && req.body.ownerUserId !== req.session.userId) {
+    return res.status(409).json({ success: false, error: '계정이 변경되었습니다. 다시 로그인해주세요.' });
+  }
 
   if (!Array.isArray(decorations) || decorations.length > MAX_DECORATIONS) {
     return res.status(400).json({ success: false, error: '장식 데이터가 올바르지 않습니다.' });
@@ -778,7 +781,7 @@ app.post('/api/aquarium-decorations', requireAuth, (req, res) => {
     typeof item.src === 'string' &&
     Number.isFinite(item.x) &&
     Number.isFinite(item.y) &&
-    (item.layer === undefined || item.layer === 'back' || item.layer === 'front');
+    (item.layer === undefined || item.layer === 'back' || item.layer === 'middle' || item.layer === 'front');
 
   if (!decorations.every(isValidDecoration)) {
     return res.status(400).json({ success: false, error: '장식 데이터가 올바르지 않습니다.' });

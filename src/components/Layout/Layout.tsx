@@ -3,11 +3,14 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
 import { Icon } from '../UI';
 import type { IconName } from '../UI';
+import useIsMobile from '../../hooks/useIsMobile';
+import MobileLayout from './MobileLayout';
 
 const Layout: React.FC = () => {
-  const { tankName, currentUser, logout, alerts } = useAppContext();
+  const { tankName, currentUser, logout, alerts, setControlNotice } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
+  const isMobile = useIsMobile();
   const menus: { name: string; mobileName: string; path: string; icon: IconName; end?: boolean }[] = [
     { name: '대시보드', mobileName: '대시보드', path: '/', icon: 'grid', end: true },
     { name: '기록', mobileName: '기록', path: '/records', icon: 'chart' },
@@ -15,9 +18,14 @@ const Layout: React.FC = () => {
     { name: '설정', mobileName: '설정', path: '/settings', icon: 'settings' },
   ];
   const handleLogout = async () => {
-    await logout();
-    navigate('/login', { replace: true });
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch {
+      setControlNotice('로그아웃하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해주세요.');
+    }
   };
+  if (isMobile) return <MobileLayout onLogout={handleLogout} />;
   return (
     <div className="cft-shell">
       <aside className="cft-sidebar">

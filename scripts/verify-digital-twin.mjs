@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 const { chromium } = await import(process.env.CFT_PLAYWRIGHT_MODULE || 'playwright');
 const preset = JSON.parse(readFileSync(new URL('../public/fish_sprites/fish_right.rig.json', import.meta.url)));
 let savedRig = structuredClone(preset);
 let failRigSave = false;
+let failDecorationSave = false;
 const rigSource = () => ({success:true,imageUrl:'/fish_sprites/fish_right.png',imageHash:preset.imageHash,sourceSize:preset.sourceSize,rig:savedRig});
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CFT_CHROMIUM, args: ['--no-sandbox', '--enable-unsafe-swiftshader'] });
 const anchor = new Date('2026-10-17T03:00:00Z');
@@ -58,7 +59,10 @@ await context.route('**/*', async route => {
    response=rigSource();
  }
  else if(path === '/api/fish/appearance') fish={...fish,...body};
- else if(path === '/api/aquarium-decorations') fish={...fish,decorations:body.decorations};
+ else if(path === '/api/aquarium-decorations') {
+   if (failDecorationSave) return route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({success:false,error:'배치 저장 실패 테스트'})});
+   fish={...fish,decorations:body.decorations};
+ }
  else if(path === '/api/sensor-data') response=sensors;
  else if(path === '/api/sensor-data/latest') response={success:true,data:sensors.at(-1)};
  else if(path === '/api/sensor-data/pollution-baseline') response={baseline:{turbidity:{mean:2.2,std:.2},tds:{mean:120,std:10}}};
@@ -80,7 +84,7 @@ page.on('dialog',dialog=>dialog.accept());
 await page.clock.setFixedTime(anchor);
 const base=process.env.CFT_BASE_URL || 'http://127.0.0.1:5174';
 const noOverflow=async label=>{const result=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));assert(result.scroll<=result.width+1,`${label} overflow: ${JSON.stringify(result)}`);};
-const shot=async name=>page.screenshot({path:new URL(`../output/digital-twin/${name}.png`,import.meta.url).pathname,fullPage:true});
+const shot=async name=>page.screenshot({path:new URL(`../output/${process.env.CFT_OUTPUT_DIR || 'digital-twin'}/${name}.png`,import.meta.url).pathname,fullPage:true});
 
 try {
 page.setDefaultTimeout(15000);
@@ -94,17 +98,29 @@ const send = async (frame, extra={}) => {
   liveSocket.send(JSON.stringify({type:'fish_tracking',owner_user_id:1,source:'personal',stream_id:'test',track_id:1,frame_id:frame,center_norm:[.58,.48],state:'tracked',conf:.7,pose_conf:.5,frame_size:[1280,720],keypoints:{head:[800,350],tail:[600,350]},...extra}));
   await page.waitForTimeout(500);
 };
-await send(0); await send(1); await send(2); await send(3);
+for (let frame=0;frame<8;frame++) await send(frame,{bbox:[550,280,850,420]});
+await page.waitForFunction(()=>document.querySelector('.twin-fish-depth').style.transform.includes('scale'));
+const depthCenter=await positionAfterReady();
+async function positionAfterReady(){return page.locator('[data-aquarium-fish]').evaluate(el=>({x:parseFloat(el.style.left),y:parseFloat(el.style.top)}));}
+for(let frame=8;frame<26;frame++) {
+ const size=1+Math.min(frame-7,12)*.025;
+ await send(frame,{bbox:[700-150*size,350-70*size,700+150*size,350+70*size],keypoints:{head:[700+100*size,350],tail:[700-100*size,350]}});
+}
+const actualScale=await page.locator('.twin-fish-depth').evaluate(el=>new DOMMatrix(getComputedStyle(el).transform).a);
+assert(actualScale>1.07 && actualScale<=1.1001,`Depth must respond to stable approach: ${actualScale}`);
+assert(Math.abs((await positionAfterReady()).x-depthCenter.x)<.1,'Depth must preserve anchor center');
+await shot('depth-approach-1440');
+const frameOffset=30;
 await page.locator('[data-status="tracking"]').waitFor();
 const position = () => page.locator('[data-aquarium-fish]').evaluate(el=>({x:parseFloat(el.style.left),y:parseFloat(el.style.top)}));
 const before=await position();
 assert(Math.abs(before.x-58)<1);
-await send(4,{owner_user_id:2,center_norm:[.15,.15]});
+await send(frameOffset+4,{owner_user_id:2,center_norm:[.15,.15]});
 assert(Math.abs((await position()).x-before.x)<1,'Another account must not move this fish');
-await send(4,{center_norm:[.98,.03],pose_conf:0,keypoints:{head:[500,350],tail:[800,350]},bbox:[0,0,1279,719]});
+await send(frameOffset+4,{center_norm:[.98,.03],pose_conf:0,keypoints:{head:[500,350],tail:[800,350]},bbox:[0,0,1279,719]});
 const after=await position();
 assert(Math.abs(after.x-before.x)<1,'One outlier must not teleport');
-await send(5,{state:'lost',center_norm:null,keypoints:{head:null,tail:null}});
+await send(frameOffset+5,{state:'lost',center_norm:null,keypoints:{head:null,tail:null}});
 await page.locator('[data-status="lost"]').waitFor();
 const stopped=await position();
 await page.waitForTimeout(4700);
@@ -137,7 +153,41 @@ await page.locator('.fish-sprite-canvas canvas').evaluate(canvas=>canvas.dispatc
 await page.waitForFunction(()=>getComputedStyle(document.querySelector('.fish-sprite > img')).visibility==='visible');
 await page.setViewportSize({width:1440,height:1000});
 await page.goto(`${base}/personal-settings`);
-await page.getByRole('button',{name:'물고기 그래픽',exact:true}).click();
+// Three layers, in-layer ordering, failed-save retry and reload use the real UI.
+const add = name => page.getByRole('button', { name, exact: true }).click();
+await add('석조 아치');
+await page.getByLabel('장식 레이어', {exact:true}).selectOption('back');
+await add('둥근 바위 동굴');
+await add('나무 다리');
+assert.equal(await page.getByLabel('장식 레이어', {exact:true}).inputValue(), 'middle');
+await add('이 레이어 안에서 뒤로');
+assert.equal(await page.getByRole('button',{name:'이 레이어 안에서 뒤로',exact:true}).isDisabled(),true);
+await add('이 레이어 안에서 앞으로');
+await page.getByLabel('장식 레이어', {exact:true}).selectOption('front');
+await page.getByText('배치 저장 완료',{exact:true}).waitFor();
+assert.deepEqual(fish.decorations.map(item=>item.layer),['back','middle','front']);
+const layout = structuredClone(fish.decorations);
+await page.reload();
+await page.getByLabel('장식 선택',{exact:true}).selectOption(layout[1].id);
+assert.equal(await page.getByLabel('장식 레이어',{exact:true}).inputValue(),'middle');
+failDecorationSave=true;
+await page.getByLabel('장식 레이어',{exact:true}).selectOption('front');
+await page.getByRole('button',{name:'최신 배치 다시 저장',exact:true}).waitFor();
+assert.deepEqual(fish.decorations,layout,'Failed save retains server layout');
+failDecorationSave=false;
+await add('최신 배치 다시 저장');
+await page.getByText('배치 저장 완료',{exact:true}).waitFor();
+assert.equal(fish.decorations.at(-1).id,layout[1].id);
+assert.equal(fish.decorations.at(-1).x,layout[1].x);
+assert.equal(fish.decorations.at(-1).y,layout[1].y);
+await shot('layers-editor-1440');
+await page.setViewportSize({width:390,height:1000});
+await page.getByLabel('장식 선택',{exact:true}).selectOption(layout[1].id);
+assert.equal(await page.getByLabel('장식 레이어',{exact:true}).inputValue(),'front');
+await noOverflow('layer editor mobile');
+await shot('layers-editor-390');
+await page.setViewportSize({width:1440,height:1000});
+await page.getByRole('button',{name:/^(물고기 그래픽|물고기)$/}).click();
 await page.getByRole('button',{name:'움직임 설정',exact:true}).click();
 await page.getByRole('dialog').waitFor();
 await page.getByRole('button',{name:'이 그래픽에 저장',exact:true}).waitFor();
@@ -147,8 +197,23 @@ await page.keyboard.press('ArrowLeft');
 await page.getByLabel('지느러미 움직임 강도').selectOption('high');
 await page.getByLabel('빠른 수영 미리보기').check();
 await page.waitForTimeout(500);
+await page.locator('.rig-preview-tank canvas').waitFor();
+await page.evaluate(()=>{window.__previewCanvas=document.querySelector('.rig-preview-tank canvas');});
+await page.getByLabel('지느러미 움직임 강도').selectOption('low');
+await page.waitForTimeout(250);
+assert(await page.evaluate(()=>window.__previewCanvas===document.querySelector('.rig-preview-tank canvas')),'Rig edits retain the WebGL renderer');
+await page.getByLabel('지느러미 움직임 강도').selectOption('high');
 await shot('rig-editor-1440');
 await page.setViewportSize({width:390,height:1000});
+// The existing layout changes route trees at the mobile breakpoint. Open a
+// fresh mobile dialog after resizing, then exercise its save/failure controls.
+await page.getByRole('button',{name:'물고기',exact:true}).click();
+await page.getByRole('button',{name:'움직임 설정',exact:true}).click();
+await page.getByRole('button',{name:'꼬리',exact:true}).click();
+await page.getByLabel('꼬리 뿌리점',{exact:true}).focus();
+await page.keyboard.press('ArrowLeft');
+await page.getByLabel('지느러미 움직임 강도').selectOption('high');
+await page.getByLabel('빠른 수영 미리보기').check();
 await noOverflow('rig editor mobile');
 await shot('rig-editor-390');
 failRigSave=true;
@@ -161,7 +226,7 @@ await page.getByRole('dialog').waitFor({state:'hidden'});
 assert.equal(savedRig.tail.strength,'high');
 assert(savedRig.tail.root[0]<preset.tail.root[0]);
 await page.reload();
-await page.getByRole('button',{name:'물고기 그래픽',exact:true}).click();
+await page.getByRole('button',{name:/^(물고기 그래픽|물고기)$/}).click();
 await page.getByRole('button',{name:'움직임 설정',exact:true}).click();
 await page.getByRole('button',{name:'꼬리',exact:true}).click();
 assert.equal(await page.getByLabel('지느러미 움직임 강도').inputValue(),'high');
@@ -182,7 +247,7 @@ assert.equal(await page.locator('dialog').count(),0);
 // An old graphic without a rig retains the original image.
 savedRig=null;
 await page.reload();
-await page.getByRole('button',{name:'물고기 그래픽',exact:true}).waitFor();
+await page.getByRole('button',{name:/^(물고기 그래픽|물고기)$/}).waitFor();
 await page.waitForTimeout(500);
 assert.equal(await page.locator('.aquarium .fish-sprite-canvas canvas').count(),0);
 assert(await page.locator('.aquarium .fish-sprite > img').evaluate(el=>el.complete && el.naturalWidth>0));
@@ -192,11 +257,20 @@ await page.getByRole('heading',{name:'디지털 트윈 입력 재생 검증',exa
 await page.getByRole('button',{name:'재생',exact:true}).click();
 await page.waitForTimeout(2000);
 await page.getByRole('button',{name:'일시 정지',exact:true}).click();
+await page.getByLabel('재생 위치',{exact:true}).evaluate(el=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'11000');el.dispatchEvent(new Event('input',{bubbles:true}));});
+await page.waitForTimeout(250);
 await shot('tracking-replay');
+const fps = await page.evaluate(()=>new Promise(resolve=>{
+ const frames=[]; const start=performance.now();
+ const tick=now=>{frames.push(now);if(now-start<1500)requestAnimationFrame(tick);else resolve({fps:(frames.length-1)*1000/(frames.at(-1)-frames[0]),maxFrameMs:Math.max(...frames.slice(1).map((v,i)=>v-frames[i])),viewport:[innerWidth,innerHeight],userAgent:navigator.userAgent});};requestAnimationFrame(tick);
+}));
+console.log(JSON.stringify({environment:'Headless Chromium / software WebGL; not physical-device performance',...fps}));
 await page.getByRole('button',{name:'처음으로',exact:true}).click();
 assert.equal(await page.getByRole('status').textContent(),'재생 대기');
 assert.deepEqual(errors,[]);
-console.log(JSON.stringify({success:true,checks:['waiting','continuous WebGL mesh','tracked input','outlier hold','lost/stopped connection','restart','desktop/tablet/mobile','context-loss image fallback','reduced motion','keyboard attachment editing','save failure preserves rig','save/reload','cancel'],errors}));
+assert(!requests.some(row=>['/api/feeder/feed','/api/feeder/reset'].includes(row.path)),'Visual changes never issue device commands');
+writeFileSync(new URL(`../output/${process.env.CFT_OUTPUT_DIR || 'digital-twin'}/browser-check.json`,import.meta.url),JSON.stringify({success:true,viewports:[1440,800,390],headlessFrameTiming:fps,errors},null,2));
+console.log(JSON.stringify({success:true,checks:['waiting','continuous WebGL mesh','tracked input','outlier hold','lost/stopped connection','restart','desktop/tablet/mobile','context-loss image fallback','reduced motion','keyboard attachment editing','save failure preserves rig','save/reload','cancel','height depth approach','fixed depth anchor','three decoration layers','in-layer ordering','failed decoration save/retry','renderer preserved during rig edits'],errors}));
 } catch (error) {
  await shot('failure');
  console.log(await page.evaluate(()=>({status:document.querySelector('.twin-tracking-status')?.textContent,canvasCount:document.querySelectorAll('canvas').length,images:[...document.querySelectorAll('.fish-sprite img')].map(el=>({src:el.src,loaded:el.complete,width:el.naturalWidth}))})));

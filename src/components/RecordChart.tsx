@@ -132,7 +132,7 @@ export default function RecordChart({
             {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
               <line key={ratio} x1={left} x2={right}
                 y1={top + ratio * plotHeight} y2={top + ratio * plotHeight}
-                stroke="#e0eae8" strokeDasharray="4 4" />
+                stroke="var(--cft-chart-grid, #e0eae8)" strokeDasharray="4 4" />
             ))}
             {variant === 'line' && (
               <path d={path} fill="none" stroke={color} strokeWidth={2.5}
@@ -150,14 +150,14 @@ export default function RecordChart({
                   fill={color} opacity={active ? 1 : 0.8} />
               ) : (active || plotWidth / Math.max(data.length - 1, 1) >= 12) ? (
                 <circle key={`${point.timestamp}-${index}`} cx={x} cy={y}
-                  r={active ? 5 : 3} fill={color} stroke="white" strokeWidth={1.5} />
+                  r={active ? 5 : 3} fill={color} stroke="var(--cft-surface, white)" strokeWidth={1.5} />
               ) : null;
             })}
             {Array.from(labelIndices).map((index) => (
               <text key={index} x={xAt(index)} y={height - 12}
                 textAnchor={data.length === 1 ? 'middle' : index === 0 ? 'start'
                   : index === data.length - 1 ? 'end' : 'middle'}
-                fontSize={12} fill="#668080">
+                fontSize={12} fill="var(--cft-chart-label, #668080)">
                 {axisLabels[index]}
               </text>
             ))}

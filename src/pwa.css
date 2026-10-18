@@ -1,0 +1,25 @@
+.cft-pwa-notices { position: relative; z-index: 60; background: #f5f8f8; color: #31585e; }
+.cft-pwa-notice { display: flex; align-items: center; gap: 12px; margin: 0; padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left)); border-bottom: 1px solid #d6e8e6; background: #eaf7f5; font-size: 13px; line-height: 1.6; }
+.cft-pwa-notice > div { flex: 1; min-width: 0; }
+.cft-pwa-notice strong { font-weight: 700; }
+.cft-pwa-notice p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.cft-pwa-notice img { width: 40px; height: 40px; border-radius: 10px; }
+.cft-pwa-notice button, .cft-connection-page button { flex-shrink: 0; min-height: 44px; padding: 8px 14px; border: 1px solid #07868b; border-radius: 9px; background: #07868b; color: #fff; font: inherit; cursor: pointer; }
+.cft-pwa-notice button:disabled { opacity: .5; cursor: wait; }
+.cft-pwa-notice button:focus-visible { outline: 3px solid #31585e; outline-offset: 3px; }
+.cft-pwa-notice .cft-pwa-dismiss { min-width: 36px; padding: 6px; border-color: transparent; background: transparent; color: #55767c; font-size: 24px; }
+.cft-pwa-notice.is-connection { background: #fff5dd; color: #73551e; border-color: #eeddb4; }
+.cft-pwa-notice.is-update { background: #eaf2ff; }
+.cft-connection-page { display: grid; justify-items: center; align-content: center; gap: 16px; min-height: 70dvh; padding: 32px 20px; text-align: center; color: #31585e; }
+.cft-connection-page img { width: 72px; height: 72px; border-radius: 18px; }
+.cft-connection-page h1 { font-size: 22px; font-weight: 700; }
+.cft-pwa-instructions { padding-top: 8px; }
+@media (max-width: 720px) {
+  .cft-pwa-notices { padding-top: env(safe-area-inset-top, 0px); }
+  .cft-pwa-notices:empty { display: none; }
+  .cft-pwa-notice { flex-wrap: wrap; gap: 8px; font-size: 12px; }
+  .cft-pwa-notice > div { flex-basis: calc(100% - 56px); }
+  .cft-pwa-notice > button { margin-left: auto; }
+  .cft-pwa-notice > button + button { margin-left: 0; }
+  body:has(.cft-pwa-notice) .cft-mobile-header { padding-top: 0; height: 64px; }
+}

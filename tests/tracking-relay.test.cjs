@@ -4,7 +4,7 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { trackingPayload } = require('../tracking-payload.cjs');
-const server = readFileSync(path.join(__dirname, '../server.cjs'), 'utf8');
+const server = readFileSync(path.join(__dirname, '../server.cjs'), 'utf8').replace(/\r\n/g, '\n');
 function response() { return { code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; }, send(body) { this.body = body; } }; }
 test('camera route broadcasts explicit loss including frame/session metadata', async () => {
   let handler, result;

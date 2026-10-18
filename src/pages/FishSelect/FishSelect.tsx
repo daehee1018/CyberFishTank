@@ -57,13 +57,14 @@ const FishSelect: React.FC = () => {
   return (
     <div className="cft-fish-select-page flex min-h-screen items-center justify-center bg-slate-100 px-6 py-10">
       <div className="cft-fish-select-card w-full max-w-2xl rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-        <div className="mb-6 text-center">
+        <div className="cft-species-heading mb-6 text-center">
           <div className="text-sm text-slate-500">CyberFishTank</div>
-          <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
-            어떤 물고기를 키우시나요?
-          </div>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+            어떤 물고기를 <span>키우시나요?</span>
+          </h1>
           <div className="mt-2 text-sm text-slate-500">
-            현재는 베타만 지원되며, 다른 어종은 순차적으로 추가될 예정입니다.
+            현재는 베타를 지원해요.
+            다른 어종도 순차적으로 만나보실 수 있어요.
           </div>
         </div>
 
@@ -83,7 +84,9 @@ const FishSelect: React.FC = () => {
                 type="button"
                 disabled={saving}
                 onClick={() => handleSelect(species)}
-                className={`flex flex-col items-center gap-2 rounded-[16px] border p-5 transition disabled:opacity-60 ${
+                aria-pressed={isSelected}
+                aria-busy={saving && species.available}
+                className={`cft-species-option flex flex-col items-center gap-2 rounded-[16px] border p-5 transition disabled:opacity-60 ${
                   isSelected
                     ? 'border-slate-900 bg-slate-900/5'
                     : species.available
@@ -110,7 +113,7 @@ const FishSelect: React.FC = () => {
         </div>
 
         {hasExistingFish && (
-          <div className="mt-6 text-center text-sm text-slate-500">
+          <div className="cft-species-back mt-6 text-center text-sm text-slate-500">
             <Link to="/" className="font-medium text-slate-900 underline underline-offset-2">
               돌아가기
             </Link>

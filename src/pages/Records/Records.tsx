@@ -46,6 +46,9 @@ interface ChartData {
   timestamp: string;
 }
 
+// Aggregation inputs contain measured numbers; rendered series may include gaps.
+type NumericChartData = Omit<ChartData, 'value'> & { value: number };
+
 interface LineChartConfig {
   subtitle: string;
   title: string;
@@ -704,7 +707,7 @@ const Records: React.FC = () => {
 
   const getHourlyAverageData = (
     key: SensorKey
-  ): ChartData[] => {
+  ): NumericChartData[] => {
 
     const end =
       connectedAtRef.current.getTime();
@@ -827,7 +830,7 @@ const Records: React.FC = () => {
       .filter(
         (
           item
-        ): item is ChartData =>
+        ): item is NumericChartData =>
           item !== null
       );
   };
@@ -843,7 +846,7 @@ const Records: React.FC = () => {
   const getDailyAverageData = (
     key: SensorKey,
     days: number
-  ): ChartData[] => {
+  ): NumericChartData[] => {
 
     const connectedDate =
       new Date(
@@ -987,7 +990,7 @@ const Records: React.FC = () => {
       .filter(
         (
           item
-        ): item is ChartData =>
+        ): item is NumericChartData =>
           item !== null
       );
   };
@@ -1001,7 +1004,7 @@ const Records: React.FC = () => {
 
   const getWeeklyAverageData = (
     key: SensorKey
-  ): ChartData[] => {
+  ): NumericChartData[] => {
 
     const connectedDate =
       new Date(
@@ -1195,7 +1198,7 @@ const Records: React.FC = () => {
       .filter(
         (
           item
-        ): item is ChartData =>
+        ): item is NumericChartData =>
           item !== null
       );
   };
@@ -1206,7 +1209,7 @@ const Records: React.FC = () => {
 
   const getMonthlyAverageData = (
     key: SensorKey
-  ): ChartData[] => {
+  ): NumericChartData[] => {
 
     const connectedDate =
       new Date(
@@ -1354,7 +1357,7 @@ const Records: React.FC = () => {
       .filter(
         (
           item
-        ): item is ChartData =>
+        ): item is NumericChartData =>
           item !== null
       );
   };
@@ -1374,7 +1377,7 @@ const Records: React.FC = () => {
 
 const getAllData = (
   key: SensorKey
-): ChartData[] => {
+): NumericChartData[] => {
 
   const buckets:
     Record<
@@ -1485,7 +1488,7 @@ const getAllData = (
     .filter(
       (
         item
-      ): item is ChartData =>
+      ): item is NumericChartData =>
         item !== null
     );
 };
@@ -1496,7 +1499,7 @@ const getAllData = (
 
   const getGraphData = (
     key: SensorKey
-  ): ChartData[] => {
+  ): NumericChartData[] => {
 
     switch (activeRange) {
 
@@ -1573,7 +1576,7 @@ const getAllData = (
 
 const growthData =
   useMemo(
-    (): ChartData[] =>
+    (): NumericChartData[] =>
       dbGrowthData
         .map(
           item => {
@@ -1634,7 +1637,7 @@ const growthData =
         .filter(
           (
             item
-          ): item is ChartData =>
+          ): item is NumericChartData =>
             item !== null
         )
         .sort(
@@ -1838,7 +1841,7 @@ const growthChartData =
         const buckets:
           Record<
             string,
-            ChartData[]
+            NumericChartData[]
           > = {};
 
         growthData.forEach(
@@ -2003,7 +2006,7 @@ const growthChartData =
           .filter(
             (
               item
-            ): item is ChartData =>
+            ): item is NumericChartData =>
               item !== null
           )
           .sort(
@@ -2051,7 +2054,7 @@ const growthChartData =
         const buckets:
           Record<
             string,
-            ChartData[]
+            NumericChartData[]
           > = {};
 
         growthData.forEach(
@@ -2186,7 +2189,7 @@ const growthChartData =
         const buckets:
           Record<
             string,
-            ChartData[]
+            NumericChartData[]
           > = {};
 
         growthData.forEach(
@@ -2317,7 +2320,7 @@ const growthChartData =
 
 const activityData =
   useMemo(
-    (): ChartData[] =>
+    (): NumericChartData[] =>
       dbActivityData
         .map(
           item => {
@@ -2377,7 +2380,7 @@ const activityData =
         .filter(
           (
             item
-          ): item is ChartData =>
+          ): item is NumericChartData =>
             item !== null
         )
         .sort(
@@ -2549,7 +2552,7 @@ const activityChartData =
         const buckets:
           Record<
             string,
-            ChartData[]
+            NumericChartData[]
           > = {};
 
         activityData.forEach(
@@ -2714,7 +2717,7 @@ const activityChartData =
           .filter(
             (
               item
-            ): item is ChartData =>
+            ): item is NumericChartData =>
               item !== null
           )
           .sort(
@@ -2762,7 +2765,7 @@ const activityChartData =
         const buckets:
           Record<
             string,
-            ChartData[]
+            NumericChartData[]
           > = {};
 
         activityData.forEach(
@@ -2897,7 +2900,7 @@ const activityChartData =
         const buckets:
           Record<
             string,
-            ChartData[]
+            NumericChartData[]
           > = {};
 
         activityData.forEach(
@@ -3095,7 +3098,7 @@ const activityChartData =
   // ======================================================
 
   const getChartMin = (
-    data: ChartData[],
+    data: NumericChartData[],
     defaultMin: number
   ) => {
 
@@ -3116,7 +3119,7 @@ const activityChartData =
   };
 
   const getChartMax = (
-    data: ChartData[],
+    data: NumericChartData[],
     defaultMax: number
   ) => {
 
@@ -3376,7 +3379,7 @@ const activityChartData =
   // ======================================================
 
   const renderLineGraph = (config: LineChartConfig) => {
-    const { subtitle, title, unit, badge, currentValue, data, min, max, color, valueSuffix } = config;
+    const { subtitle, title, unit, badge, currentValue, data, min, max, valueSuffix } = config;
 
     return (
       <section className="cft-panel cft-record-panel">
@@ -3421,7 +3424,7 @@ const activityChartData =
   // 알림 패널
 
   const renderAlertPanel = () => (
-    <section className="cft-panel cft-alert-panel">
+    <section className="cft-panel cft-alert-panel" id="alert-records">
       <div className="cft-panel-heading"><h2>알림 기록</h2><select className="cft-select" aria-label="알림 정렬" value={alertSort} onChange={event => { setAlertSort(event.target.value); setAlertPage(1); }}><option value="최신">최신순 ↓</option><option value="오래된 순">오래된 순 ↑</option></select></div>
       <div className="cft-tabs cft-alert-filters" aria-label="알림 범주">{['전체', '수온', 'pH', '수위', '수질', '이상 행동', '기타'].map(category => <button key={category} aria-pressed={alertCategory === category} className={alertCategory === category ? 'is-active' : ''} onClick={() => { setAlertCategory(category); setAlertPage(1); }}>{category}</button>)}</div>
       <div className="cft-alert-list">{sortedAlerts.length === 0 ? <div className="cft-empty">최근 1주일 내 발생한 알림이 없습니다.</div> : pagedAlerts.map(alert => <div className="cft-alert-row" key={alert.id}><span className="cft-alert-icon"><Icon name="bell" /></span><div><strong>{alert.title}</strong><p>{alert.detail}</p></div><time>{alert.time}</time></div>)}</div>

@@ -2,7 +2,7 @@
 //
 // 어항 배경 테마 선택. 물고기 색상/액세서리(FishAppearance)와
 // 같은 패턴: 새 에셋 없이 CSS/이모지로만 구현해서 즉시 반영된다.
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 
 const THEME_OPTIONS: { key: string; label: string; emoji: string }[] = [
@@ -68,13 +68,14 @@ export default function TankTheme() {
   }
 
   return (
-    <div className="mb-4 space-y-4">
+    <div className="cft-theme-options mb-4 space-y-4">
       <div>
         <div className="mb-2 text-xs font-semibold text-slate-500">테마</div>
         <div className="flex flex-wrap gap-2">
           {THEME_OPTIONS.map((option) => (
             <button
               key={option.key}
+              aria-pressed={tankTheme === option.key}
               onClick={() => handleSelectTheme(option.key)}
               disabled={savingTheme}
               className={`rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:opacity-60 ${
@@ -83,7 +84,7 @@ export default function TankTheme() {
                   : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
               }`}
             >
-              {option.emoji} {option.label}
+              <span className="cft-theme-emoji">{option.emoji} </span>{option.label}
             </button>
           ))}
         </div>
@@ -96,6 +97,7 @@ export default function TankTheme() {
           {SUBSTRATE_OPTIONS.map((option) => (
             <button
               key={option.key}
+              aria-pressed={substrateColor === option.key}
               onClick={() => handleSelectSubstrate(option.key)}
               disabled={savingSubstrate}
               className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:opacity-60 ${

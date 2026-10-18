@@ -1,12 +1,13 @@
 {
   "name": "CyberFishTank",
+  "id": "/",
   "short_name": "FishTank",
   "description": "디지털 트윈 기반 스마트 어항 관리 시스템",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#f1f5f9",
+  "orientation": "any",
+  "background_color": "#f1f7f6",
   "theme_color": "#58b9d8",
   "icons": [
     {

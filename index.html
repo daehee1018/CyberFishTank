@@ -13,9 +13,80 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="FishTank" />
     <title>CyberFishTank</title>
+    <script>
+      // Restore the saved theme before the first paint, including the startup screen.
+      try {
+        const theme = localStorage.getItem('cft-theme') === 'dark' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+        if (theme === 'dark') document.querySelector('meta[name="theme-color"]').content = '#101b22';
+      } catch { /* The app can also run without browser storage. */ }
+    </script>
+    <!-- Paint before the application bundle or its styles have downloaded. -->
+    <style>
+      @font-face{font-family:CftStartup;src:url('/fonts/PretendardVariable.woff2') format('woff2');font-display:swap}
+      body:has(#cft-startup){margin:0;overflow:hidden;background:#f1f7f6}
+      #cft-startup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;box-sizing:border-box;min-height:100dvh;padding:32px 24px;padding-top:max(32px,env(safe-area-inset-top));padding-bottom:max(32px,env(safe-area-inset-bottom));overflow:auto;background:radial-gradient(ellipse at 50% 38%,#dbf0ed 0%,#edf6f4 45%,#f1f7f6 75%);color:#294f54;font-family:CftStartup,system-ui,sans-serif;text-align:center;opacity:1;transition:opacity .22s ease}
+      #cft-startup[data-state="leaving"]{opacity:0;pointer-events:none}
+      .cft-startup-content{width:100%;max-width:360px;margin:auto}
+      .cft-startup-art{position:relative;display:grid;place-items:center;width:196px;height:196px;margin:0 auto 28px}
+      .cft-startup-art::before,.cft-startup-art::after{content:"";position:absolute;inset:0;border:1px solid #acd4cf;border-radius:50%;opacity:.55}
+      .cft-startup-art::after{inset:18px;opacity:.4}
+      .cft-startup-logo{display:grid;place-items:center;width:112px;height:112px;border:1px solid #ffffff;border-radius:32px;background:#ffffffc9;box-shadow:0 14px 48px #357e7912;animation:cft-startup-float 3s ease-in-out infinite}
+      .cft-startup-logo img{display:block;width:88px;height:88px;object-fit:contain}
+      .cft-startup-bubble{position:absolute;left:17px;top:41px;width:10px;height:10px;border:1px solid #94c7c1;border-radius:50%;background:#f1faf8;animation:cft-startup-float 3s ease-in-out infinite reverse}
+      .cft-startup-bubble:nth-of-type(2){left:auto;right:11px;top:117px;width:7px;height:7px;animation-delay:-1s}
+      .cft-startup-bubble:nth-of-type(3){left:59px;top:auto;bottom:3px;width:5px;height:5px;animation-delay:-2s}
+      #cft-startup h1{margin:0;font-size:29px;font-weight:750;line-height:1.3;letter-spacing:-1.1px}
+      .cft-startup-tagline{margin:10px 0 0;color:#70908f;font-size:14px;line-height:1.6;letter-spacing:-.2px}
+      .cft-startup-progress{width:132px;height:3px;margin:36px auto 16px;overflow:hidden;border-radius:10px;background:#d4e8e4}
+      .cft-startup-progress::after{content:"";display:block;width:50%;height:100%;border-radius:inherit;background:#168f90;animation:cft-startup-progress 1.5s ease-in-out infinite}
+      #cft-startup-message{margin:0;color:#658683;font-size:12px;line-height:1.7;letter-spacing:-.1px}
+      #cft-startup-retry{min-height:44px;margin:18px auto 0;padding:10px 20px;border:1px solid #07868b;border-radius:11px;background:#07868b;color:white;font:inherit;font-size:13px;cursor:pointer}
+      #cft-startup-retry[hidden]{display:none}
+      #cft-startup-retry:focus-visible{outline:3px solid #31585e;outline-offset:4px}
+      .cft-startup-footer{position:absolute;bottom:max(28px,env(safe-area-inset-bottom));left:24px;right:24px;margin:0;color:#89a5a0;font-size:10px;font-weight:550;letter-spacing:2.2px}
+      html[data-theme="dark"]{background:#101b22;color:#deebee}
+      html[data-theme="dark"] body:has(#cft-startup){background:#101b22}
+      html[data-theme="dark"] #cft-startup{background:radial-gradient(ellipse at 50% 38%,#193b3f 0%,#14272e 45%,#101b22 75%);color:#deebee}
+      html[data-theme="dark"] .cft-startup-logo{background:#20353e;border-color:#344c57}
+      html[data-theme="dark"] .cft-startup-bubble{background:#20353e;border-color:#548a86}
+      html[data-theme="dark"] .cft-startup-progress{background:#2c444c}
+      html[data-theme="dark"] :is(.cft-startup-tagline,#cft-startup-message,.cft-startup-footer){color:#a1b8bf}
+      @keyframes cft-startup-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+      @keyframes cft-startup-progress{0%{transform:translateX(-110%)}100%{transform:translateX(310%)}}
+      @media(prefers-reduced-motion:reduce){#cft-startup{transition:none}.cft-startup-logo,.cft-startup-bubble,.cft-startup-progress::after{animation:none}.cft-startup-progress::after{width:100%;opacity:.6}}
+      @media(max-height:480px){.cft-startup-art{width:120px;height:120px;margin-bottom:16px}.cft-startup-logo{width:88px;height:88px;border-radius:25px}.cft-startup-logo img{width:72px;height:72px}.cft-startup-progress{margin-top:20px}.cft-startup-footer{display:none}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="cft-startup" role="status" aria-live="polite" aria-label="CyberFishTank 시작 중">
+      <div class="cft-startup-content">
+        <div class="cft-startup-art" aria-hidden="true">
+          <div class="cft-startup-logo"><img src="/icons/icon-192.png" alt="" width="88" height="88" /></div>
+          <span class="cft-startup-bubble"></span><span class="cft-startup-bubble"></span><span class="cft-startup-bubble"></span>
+        </div>
+        <h1>CyberFishTank</h1>
+        <p class="cft-startup-tagline">내 어항과 이어지는 작은 순간</p>
+        <div class="cft-startup-progress" aria-hidden="true"></div>
+        <p id="cft-startup-message">어항을 만나러 가는 중이에요</p>
+        <button type="button" id="cft-startup-retry" hidden>다시 불러오기</button>
+      </div>
+      <p class="cft-startup-footer" aria-hidden="true">YOUR LITTLE UNDERWATER WORLD</p>
+    </div>
+    <div id="root" inert aria-hidden="true" aria-busy="true"></div>
+    <script>
+      (() => {
+        const retry = document.getElementById('cft-startup-retry');
+        retry.addEventListener('click', () => location.reload());
+        const timer = setTimeout(() => {
+          document.getElementById('cft-startup-message').textContent = '앱을 불러오지 못했어요. 연결을 확인한 뒤 다시 시도해주세요.';
+          retry.hidden = false;
+        }, 15000);
+        window.addEventListener('cft:boot-ready', () => clearTimeout(timer), { once: true });
+      })();
+    </script>
+    <noscript><style>#cft-startup-message,.cft-startup-progress{display:none}</style><p style="position:fixed;bottom:72px;left:24px;right:24px;z-index:10000;text-align:center;color:#31585e">앱을 실행하려면 JavaScript를 허용해주세요.</p></noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

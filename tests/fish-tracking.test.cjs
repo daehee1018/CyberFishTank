@@ -11,7 +11,7 @@ function load(file) {
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports });
   return exports;
 }
-const { FishTrackingFilter, mapTrackingPoint } = load('src/lib/fishTracking.ts');
+const { FishTrackingFilter, FishDepthFilter, mapTrackingPoint } = load('src/lib/fishTracking.ts');
 const { vertexWeight, displacement } = load('src/lib/fishRig.ts');
 const base = { owner_user_id: 1, source: 'personal', stream_id: 's1', track_id: 1, state: 'tracked', center_norm: [.5, .5], conf: .6, pose_conf: .5, frame_size: [1280, 720], head: [800, 350], tail: [600, 350] };
 function settled(extra = {}) {
@@ -23,18 +23,19 @@ test('stationary noise, one outlier and stale pose do not move or flip the fish'
   const f = settled();
   assert.equal(f.status(1500), 'tracking');
   f.ingest({ ...base, frame_id: 4, center_norm: [.503, .5] }, 2000);
-  assert.equal(f.x, .5);
+  assert.ok(f.x > .5 && f.x < .503, 'Small movement is attenuated, never discarded');
+  const held = f.x;
   f.ingest({ ...base, frame_id: 5, center_norm: [.99, .01], head: [400, 350], pose_conf: 0 }, 2500);
-  assert.equal(f.x, .5); assert.equal(f.angle, 0); assert.equal(f.flip, false);
+  assert.equal(f.x, held); assert.equal(f.angle, 0); assert.equal(f.flip, false);
   f.ingest({ ...base, frame_id: 6 }, 3000);
-  assert.equal(f.x, .5);
+  assert.ok(Math.abs(f.x - .5) < .001);
   f.ingest({ ...base, frame_id: 7, head: [600, 350], tail: [600, 350] }, 3500);
   assert.equal(f.angle, 0);
 });
 test('sustained real movement is reacquired; position and pose gates are independent', () => {
   const f = settled();
   for (const [t, x] of [[2000, .85], [2500, .9], [3000, .95]]) f.ingest({ ...base, frame_id: t, center_norm: [x, .3], pose_conf: 0 }, t);
-  assert.equal(f.x, .95); assert.equal(f.y, .3);
+  assert.ok(f.x > .92 && f.x <= .95); assert.ok(Math.abs(f.y - .3) < .02);
   assert.equal(f.angle, 0);
   assert.equal(f.status(5000), 'pose');
   const x = f.x;
@@ -45,7 +46,7 @@ test('sustained real movement is reacquired; position and pose gates are indepen
 test('large consistent motion during acquisition is not permanently rejected', () => {
   const f = new FishTrackingFilter();
   for (const [t, x] of [[0, .05], [500, .35], [1000, .65]]) f.ingest({ ...base, center_norm: [x, .4], frame_id: t }, t);
-  assert.equal(f.x, .65);
+  assert.ok(f.x > .60 && f.x <= .65);
   assert.equal(f.status(1000), 'tracking');
 });
 test('lost, stopped connection and reacquisition retain the last position', () => {
@@ -78,7 +79,7 @@ test('legacy center-only input works; missing metadata never enables pose or dep
   assert.equal(f.x, .6); assert.equal(f.status(1000), 'pose');
   f.ingest({ center_norm: [NaN, Infinity] }, 1500);
   assert.equal(f.x, .6);
-  assert.equal('scale' in f, false);
+  assert.equal(f.depth.scale, 1); assert.equal(f.depth.state, 'unavailable');
 });
 test('legacy physical pixel keypoints control heading even when frame_size is missing', () => {
   const f = new FishTrackingFilter();
@@ -153,7 +154,7 @@ test('mesh keeps eye/body/root still, moves fins and bounds overlapping weights'
     assert.ok(Math.hypot(...displacement(w, 1)) < .00001, `${p} should stay attached`);
   }
   const w = vertexWeight(.3, .55, rig);
-  assert.ok(Math.hypot(...displacement(w, 1)) > .001);
+  assert.ok(Math.hypot(...displacement(w, 1, false, 1)) > .001);
   assert.notDeepEqual(displacement(w, 1), displacement(w, 1.2));
   for (let y = 0; y <= 1; y += .02) for (let x = 0; x <= 1; x += .02) {
     const w = vertexWeight(x, y, rig);

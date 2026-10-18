@@ -1,21 +1,40 @@
-// CyberFishTank 서비스 워커
-//
-// 지금은 "설치 가능한 웹앱(PWA)"이 되기 위한 최소 조건만
-// 채운다 — fetch 이벤트를 처리하는 서비스 워커가 있어야
-// 브라우저가 설치 프롬프트를 띄워준다. 센서/알림은 실시간
-// 데이터라 오프라인 캐싱은 하지 않고 그냥 네트워크로
-// 통과시킨다. 나중에 푸시 알림을 붙일 때 이 파일에
-// push/notificationclick 리스너를 추가하면 된다.
+// The production build injects a content version and the app's static assets.
+// Never cache API responses, uploads, video, or device commands.
+const VERSION = 'development';
+const PRECACHE = ['/offline.html', '/icons/icon-192.png'];
+const CACHE = `cft-shell-${VERSION}`;
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
+self.addEventListener('install', event => {
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)));
 });
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
-
-self.addEventListener('fetch', () => {
-  // 캐싱 없음 — 항상 네트워크로. 이 리스너 자체가
-  // PWA 설치 조건(fetch 핸들러 존재)을 만족시킨다.
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    await Promise.all((await caches.keys()).filter(key => key.startsWith('cft-shell-') && key !== CACHE).map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
+});
+self.addEventListener('fetch', event => {
+  const request = event.request;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/uploads/')) return;
+  if (request.mode === 'navigate') {
+    event.respondWith((async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(request, { signal: controller.signal });
+        if (response.status >= 500) throw new Error('Server unavailable');
+        return response;
+      } catch {
+        return await caches.match('/offline.html', { cacheName: CACHE }) || Response.error();
+      } finally { clearTimeout(timeout); }
+    })());
+    return;
+  }
+  if (PRECACHE.includes(url.pathname)) {
+    event.respondWith(caches.open(CACHE).then(async cache => await cache.match(url.pathname) || fetch(request)));
+  }
 });

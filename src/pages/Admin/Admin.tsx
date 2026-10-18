@@ -1,3 +1,4 @@
+import { trackedFetch as fetch } from '../../services/requestActivity';
 // Administrator account management and diagnostic tools.
 //
 // admin 전용 기능 테스트 페이지. 대시보드 안에 흩어져 있던
@@ -53,7 +54,7 @@ const Admin: React.FC = () => {
         throw new Error(`상태 코드 ${response.status}`);
       }
 
-      setControlNotice(`테스트용 "${label}" 알림을 보냈습니다. 기록 페이지에서 확인해보세요.`);
+      setControlNotice(`테스트용 "${label}" 알림을 보냈습니다. 기록의 알림 화면에서 확인해보세요.`);
     } catch (err) {
       console.error('❌ 테스트 알림 전송 실패:', err);
       setControlNotice('테스트 알림 전송에 실패했습니다.');

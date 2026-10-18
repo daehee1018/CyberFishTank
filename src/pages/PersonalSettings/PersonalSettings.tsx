@@ -8,8 +8,12 @@ import type { AquariumDecorationType } from '../../context/AppContext';
 import Aquarium from '../../components/Aquarium';
 import { Fish2D } from '../../components/Fish2D';
 import { Icon, PageHeading } from '../../components/UI';
+import useIsMobile from '../../hooks/useIsMobile';
+import { changeDecorationLayer, decorationLayer, LAYER_LABELS, moveDecoration } from '../../lib/aquariumDecorations';
+import type { DecorationLayer } from '../../lib/aquariumDecorations';
 
 const PersonalSettings: React.FC = () => {
+  const isMobile = useIsMobile();
   const {
     aquariumDecorations,
     setAquariumDecorations,
@@ -18,6 +22,8 @@ const PersonalSettings: React.FC = () => {
     substrateColor,
     fishData,
     controlNotice,
+    decorationSaveStatus,
+    retryDecorationSave,
   } = useAppContext();
 
   const [activeTab, setActiveTab] = useState('어항 커스터마이징');
@@ -69,7 +75,7 @@ const PersonalSettings: React.FC = () => {
         'keydown',
         handleKeyDown
       );
-  }, [selectedDecorationId]);
+  }, [selectedDecorationId, aquariumDecorations]);
 
   const decorationOptions: {
     type: AquariumDecorationType;
@@ -96,7 +102,7 @@ const PersonalSettings: React.FC = () => {
     y = 72
   ) => {
     const decorationId =
-      `${option.type}-${Date.now()}`;
+      `${option.type}-${crypto.randomUUID()}`;
 
     setAquariumDecorations([
       ...aquariumDecorations,
@@ -109,7 +115,7 @@ const PersonalSettings: React.FC = () => {
         width: option.type === 'plant' ? 24 : 20,
         height: option.type === 'plant' ? 34 : 24,
         sway: option.sway ?? false,
-        layer: 'back',
+        layer: 'middle',
       },
     ]);
 
@@ -173,6 +179,8 @@ const PersonalSettings: React.FC = () => {
       decoration =>
         decoration.id === selectedDecorationId
     );
+  const selectedLayerItems = selectedDecoration ? aquariumDecorations.filter(item => decorationLayer(item) === decorationLayer(selectedDecoration)) : [];
+  const selectedLayerIndex = selectedLayerItems.findIndex(item => item.id === selectedDecorationId);
 
   const updateSelectedDecoration = (
     changes: Partial<NonNullable<typeof selectedDecoration>>
@@ -209,7 +217,6 @@ const PersonalSettings: React.FC = () => {
   const getClampedPosition = (
     x: number,
     y: number,
-    width: number,
     height: number
   ) => ({
     x: Math.max(0, Math.min(100, x)),
@@ -283,7 +290,6 @@ const PersonalSettings: React.FC = () => {
     const position = getClampedPosition(
       x,
       y,
-      decoration.width ?? 22,
       decoration.height ?? 22
     );
 
@@ -339,7 +345,7 @@ const PersonalSettings: React.FC = () => {
     <div className="cft-customize-page">
       <PageHeading title="나만의 어항 꾸미기" description="물고기와 어항에 나만의 취향을 더해보세요." />
       {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
-      <nav className="cft-tabs" aria-label="꾸미기 메뉴">{['어항 커스터마이징', '물고기 그래픽', '센서 연동'].map(tab => <button key={tab} aria-pressed={activeTab === tab} className={activeTab === tab ? 'is-active' : ''} onClick={() => setActiveTab(tab)}>{tab}</button>)}</nav>
+      <nav className="cft-tabs" aria-label="꾸미기 메뉴">{['어항 커스터마이징', '물고기 그래픽', '센서 연동'].map((tab, index) => <button key={tab} aria-pressed={activeTab === tab} className={activeTab === tab ? 'is-active' : ''} onClick={() => setActiveTab(tab)}>{isMobile ? ['어항 꾸미기', '물고기', '센서 연동'][index] : tab}</button>)}</nav>
       <div className={`cft-customize-grid ${activeTab === '물고기 그래픽' ? 'is-graphics' : activeTab === '센서 연동' ? 'is-sensor' : ''}`}>
         <section className="cft-panel cft-editor-panel" hidden={activeTab === '센서 연동'}><div className="cft-panel-heading"><h2>어항 미리보기</h2><span className="cft-caption">실시간 반영</span></div>
             <div
@@ -362,6 +368,7 @@ const PersonalSettings: React.FC = () => {
                       key={decoration.id}
                       className={`absolute ${isSelected ? 'border-2 border-slate-900' : ''}`}
                       style={{
+                        zIndex: isSelected ? 4 : { back: 0, middle: 1, front: 2 }[decorationLayer(decoration)],
                         left: `${decoration.x}%`,
                         top: `${decoration.y}%`,
                         width: `${decoration.width ?? 22}%`,
@@ -422,21 +429,33 @@ const PersonalSettings: React.FC = () => {
         </section>
         <aside className="cft-panel cft-style-panel" hidden={activeTab !== '어항 커스터마이징'}><div className="cft-panel-heading"><h2>어항 스타일</h2></div><TankTheme />
 
+            <div className="cft-decoration-save" data-save-state={decorationSaveStatus}>
+              <span role="status">{{ idle: '배치 불러오기 대기', saving: '배치 저장 중…', saved: '배치 저장 완료', error: '배치를 저장하지 못했습니다. 현재 편집 내용은 유지됩니다.' }[decorationSaveStatus]}</span>
+              {decorationSaveStatus === 'error' && <button type="button" className="cft-button" onClick={retryDecorationSave}>최신 배치 다시 저장</button>}
+            </div>
+
             {aquariumDecorations.length > 0 && <label className="cft-field">장식 선택
               <select aria-label="장식 선택" value={selectedDecorationId ?? ''} onChange={event => setSelectedDecorationId(event.target.value || null)}>
                 <option value="">편집할 장식을 선택하세요</option>
-                {aquariumDecorations.map((decoration, index) => <option key={decoration.id} value={decoration.id}>{index + 1}. {decorationOptions.find(option => option.src === decoration.src)?.label ?? '장식'}</option>)}
+                {aquariumDecorations.map((decoration, index) => <option key={decoration.id} value={decoration.id}>{index + 1}. {decorationOptions.find(option => option.src === decoration.src)?.label ?? '장식'} · {LAYER_LABELS[decorationLayer(decoration)]}</option>)}
               </select>
             </label>}
 
             {selectedDecoration && <div className="cft-decoration-controls">
-              <label className="cft-field">장식 레이어
-                <select aria-label="장식 레이어" value={selectedDecoration.layer ?? 'back'} onChange={event => updateSelectedDecoration({ layer: event.target.value as 'back' | 'front' })}>
-                  <option value="back">후경 · 물고기 뒤</option>
-                  <option value="front">전경 · 물고기 앞</option>
+              <p><strong>{decorationOptions.find(option => option.src === selectedDecoration.src)?.label ?? '선택한 장식'}</strong></p>
+              <label className="cft-field">깊이 레이어
+                <select aria-label="장식 레이어" value={decorationLayer(selectedDecoration)} onChange={event => setAquariumDecorations(changeDecorationLayer(aquariumDecorations, selectedDecoration.id, event.target.value as DecorationLayer))}>
+                  <option value="back">뒤쪽 · 물고기 뒤</option>
+                  <option value="middle">중간 · 물고기 뒤</option>
+                  <option value="front">앞쪽 · 물고기 앞</option>
                 </select>
               </label>
-              <p className="cft-caption">전경 장식은 가장자리에 작게 배치해 주세요.</p>
+              <p className="cft-caption">뒤쪽·중간 구조물 위로 물고기가 보입니다. 물고기를 가리려면 앞쪽을 선택하세요. 레이어를 바꾸면 해당 레이어의 맨 앞에 놓입니다.</p>
+              <p className="cft-caption">현재 {LAYER_LABELS[decorationLayer(selectedDecoration)]} 레이어 · {selectedLayerIndex + 1} / {selectedLayerItems.length}</p>
+              <div className="cft-decoration-order">
+                <button type="button" className="cft-button" disabled={selectedLayerIndex <= 0} onClick={() => setAquariumDecorations(moveDecoration(aquariumDecorations, selectedDecoration.id, -1))}>이 레이어 안에서 뒤로</button>
+                <button type="button" className="cft-button" disabled={selectedLayerIndex >= selectedLayerItems.length - 1} onClick={() => setAquariumDecorations(moveDecoration(aquariumDecorations, selectedDecoration.id, 1))}>이 레이어 안에서 앞으로</button>
+              </div>
               <label className="cft-field">가로 위치
                 <input type="range" min="0" max="100" value={selectedDecoration.x} onChange={event => updateSelectedDecoration({ x: Number(event.target.value) })} />
               </label>
@@ -476,7 +495,7 @@ const PersonalSettings: React.FC = () => {
                 ))}
               </div>
             </div>
-          <p className="cft-caption">장식 추가 · 이동 · 크기 조절 · 선택 후 Delete로 삭제</p>
+          <p className="cft-caption">{isMobile ? '장식을 선택해 위치와 크기를 조절하거나 삭제하세요.' : '장식 추가 · 이동 · 크기 조절 · 선택 후 Delete로 삭제'}</p>
         </aside>
         <section className="cft-graphics-panel" hidden={activeTab !== '물고기 그래픽'}><FishSettings /></section>
         <section className="cft-appearance-panel" hidden={activeTab !== '물고기 그래픽'}><FishAppearance /></section>

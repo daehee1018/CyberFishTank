@@ -1,0 +1,11 @@
+{
+  "input": "Synthetic 1280x720, 400ms packets, local Chromium with software WebGL; not a live-camera test",
+  "farScale": 0.8999999761581421,
+  "farFilter": "saturate(0.82) contrast(0.86) brightness(0.955)",
+  "centerPreserved": true,
+  "canvasPreservedDuringTurn": true,
+  "mobileOverflow": false,
+  "imageFallback": true,
+  "pageErrors": [],
+  "mutationRequests": []
+}

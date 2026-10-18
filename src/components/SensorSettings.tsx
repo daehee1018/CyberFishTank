@@ -1,3 +1,4 @@
+import { trackedFetch as fetch } from '../services/requestActivity';
 import { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { DEFAULT_SENSOR_RANGES } from '../types/preferences';

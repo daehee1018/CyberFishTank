@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const Database = require('better-sqlite3');
 const { DEFAULT_SENSOR_RANGES, validateSensorRanges, createSensorSettingsStore, sensorAlertsForValues, isValidRgb } = require('../sensor-settings.cjs');
-const server = readFileSync(path.join(__dirname, '../server.cjs'), 'utf8');
+const server = readFileSync(path.join(__dirname, '../server.cjs'), 'utf8').replace(/\r\n/g, '\n');
 
 function setup(t) {
   const db = new Database(':memory:');

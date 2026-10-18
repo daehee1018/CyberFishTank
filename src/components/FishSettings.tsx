@@ -1,3 +1,4 @@
+import { trackedFetch as fetch } from '../services/requestActivity';
 // src/components/FishSettings.tsx
 import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';

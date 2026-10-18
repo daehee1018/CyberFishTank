@@ -1,0 +1,8 @@
+{
+  "input": "Synthetic rig vertex (0.30, 0.55), 400 phase samples, normalized source-image coordinates; not live-camera measurement",
+  "idlePeakBefore": 0.0054925843022827145,
+  "idlePeakAfter": 0.0013191314652697573,
+  "swimmingPeakAfter": 0.007585005925301103,
+  "idleAngularFrequencyBefore": 4.1,
+  "idleAngularFrequencyAfter": 1.8
+}

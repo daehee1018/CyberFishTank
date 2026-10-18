@@ -3,7 +3,7 @@
 .fish-sprite-canvas canvas { display: block; width: 100%; height: 100%; }
 .twin-fish-anchor { position: absolute; width: 0; height: 0; }
 .twin-fish-visual { position: absolute; z-index: 10; width: clamp(120px, 17vw, 180px); transform: translate(-50%, -50%); }
-.twin-fish-orientation, .twin-fish-facing { position: relative; width: 100%; }
+.twin-fish-depth, .twin-fish-orientation, .twin-fish-facing { position: relative; width: 100%; transform-origin: 50% 50%; }
 .twin-tracking-status { position: absolute; z-index: 21; left: 14px; top: 14px; display: flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid #ffffff45; border-radius: 20px; background: #133d41bd; color: #f0f9f7; font-size: 11px; backdrop-filter: blur(8px); }
 .twin-tracking-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #e5c383; }
 .twin-tracking-status[data-status="tracking"]::before { background: #86dbb1; }
