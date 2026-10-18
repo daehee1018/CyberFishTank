@@ -124,12 +124,15 @@ try {
     if (!navigator.serviceWorker.controller) await new Promise(done => navigator.serviceWorker.addEventListener('controllerchange', done, { once: true }));
   });
   assert.equal(await page.getByText('새 버전이 준비되었습니다').count(), 0, 'First install is not an update');
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.evaluate(() => {
     const event = new Event('beforeinstallprompt', { cancelable: true });
     event.prompt = async () => {};
     event.userChoice = Promise.resolve({ outcome: 'dismissed' });
     window.dispatchEvent(event);
   });
+  assert.equal(await page.locator('.is-install').count(), 0, 'Desktop web must not show installation guidance');
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: '설치', exact: true }).waitFor();
   await page.screenshot({ path: resolve(output, 'mobile-install.png'), fullPage: true });
   await page.getByRole('button', { name: '설치', exact: true }).click();
@@ -179,6 +182,15 @@ try {
     Date.now = now;
   });
   await page.getByText('새 버전이 준비되었습니다').waitFor();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator('.is-update').waitFor({ state: 'detached' });
+  await context.setOffline(true);
+  await page.getByText('인터넷 연결이 끊겼습니다').waitFor();
+  assert.equal(await page.locator('.is-update').count(), 0, 'Desktop web must not show update guidance');
+  await context.setOffline(false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByText('새 버전이 준비되었습니다').waitFor();
+  await page.waitForFunction(() => !document.querySelector('.cft-feeder-actions button')?.disabled);
   let finishCommand;
   holdCommand = new Promise(done => { finishCommand = done; });
   commandStarted = false;
@@ -232,7 +244,7 @@ try {
   assert.equal(await iosPage.getByRole('button', { name: '설치 방법', exact: true }).count(), 0);
   await iosContext.close();
   assert.deepEqual(errors, []);
-  console.log('PASS: startup/slow API/missing bundle/reduced motion, installation guidance, auth recovery/expiry, socket retry, offline launch/recovery, feeder protection, real worker update across tabs, cache privacy, mobile layout, iOS guidance/standalone');
+  console.log('PASS: startup/slow API/missing bundle/reduced motion, desktop web hides app notices, installation guidance, auth recovery/expiry, socket retry, offline launch/recovery, feeder protection, real worker update across tabs, cache privacy, mobile layout, iOS guidance/standalone');
 } catch (error) {
   console.error('PWA check failed:', error.message, 'URL:', page.url(), 'page errors:', errors);
   console.error((await page.locator('body').innerText().catch(() => '')).slice(0, 2000));

@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useAppContext } from '../context/AppContext';
 import useOnline from '../hooks/useOnline';
+import useIsMobile from '../hooks/useIsMobile';
 import { getPendingRequests, subscribeRequests } from '../services/requestActivity';
 import { pwaRegistration, UPDATE_EVENT } from '../services/pwa';
 
@@ -16,6 +17,7 @@ const dismissed = () => {
 
 export default function PwaExperience() {
   const online = useOnline();
+  const isMobile = useIsMobile();
   const { currentUser, authError, isWebSocketConnected, displaySensorData, decorationSaveStatus, refreshConnection } = useAppContext();
   const pending = useSyncExternalStore(subscribeRequests, getPendingRequests, () => 0);
   const [install, setInstall] = useState<InstallEvent | null>(null);
@@ -26,7 +28,8 @@ export default function PwaExperience() {
   const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState('');
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const canInstall = !standalone && !hidden && (Boolean(install) || ios);
+  const showAppNotices = isMobile || ios || standalone;
+  const canInstall = showAppNotices && !standalone && !hidden && (Boolean(install) || ios);
   const busy = pending > 0 || decorationSaveStatus === 'saving';
 
   useEffect(() => {
@@ -93,7 +96,7 @@ export default function PwaExperience() {
       <button type="button" onClick={() => { void showInstall(); }}>{install ? '설치' : instructions ? '안내 접기' : '설치 방법'}</button>
       <button type="button" className="cft-pwa-dismiss" aria-label="설치 안내 일주일 동안 닫기" onClick={dismiss}>×</button>
     </aside>}
-    {update && <aside className="cft-pwa-notice is-update" role="status"><div><strong>새 버전이 준비되었습니다</strong><p>{busy ? '요청이 완료된 후 업데이트할 수 있어요.' : '저장한 뒤 새로고침해서 적용해주세요.'}</p></div><button type="button" disabled={busy || !online || updating} onClick={() => { void applyUpdate(); }}>{updating ? '적용 중…' : '업데이트'}</button></aside>}
+    {showAppNotices && update && <aside className="cft-pwa-notice is-update" role="status"><div><strong>새 버전이 준비되었습니다</strong><p>{busy ? '요청이 완료된 후 업데이트할 수 있어요.' : '저장한 뒤 새로고침해서 적용해주세요.'}</p></div><button type="button" disabled={busy || !online || updating} onClick={() => { void applyUpdate(); }}>{updating ? '적용 중…' : '업데이트'}</button></aside>}
     {message && <p className="cft-pwa-notice" role="alert">{message}<button type="button" onClick={() => setMessage('')}>닫기</button></p>}
   </div>;
 }
