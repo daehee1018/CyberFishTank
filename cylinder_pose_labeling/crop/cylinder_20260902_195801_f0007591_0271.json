@@ -1,0 +1,28 @@
+{
+  "version": "6.1.3",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "fish",
+      "points": [
+        [
+          75.57476635514018,
+          67.21028037383181
+        ],
+        [
+          251.27570093457945,
+          181.22897196261687
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "cylinder_20260902_195801_f0007591_0271.jpg",
+  "imageData": null,
+  "imageHeight": 269,
+  "imageWidth": 339
+}

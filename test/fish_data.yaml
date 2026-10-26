@@ -1,0 +1,6 @@
+path: C:/Users/jsh14/Desktop/신진철/test/fish_dataset
+train: images/train
+val: images/val
+
+names:
+  0: fish

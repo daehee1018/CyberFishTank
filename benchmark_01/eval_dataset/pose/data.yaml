@@ -1,0 +1,9 @@
+path: C:\Users\jsh14\Desktop\s\benchmark_01\eval_dataset\pose
+train: images
+val: images
+
+names:
+  0: fish
+
+kpt_shape: [4, 3]
+flip_idx: [0, 1, 2, 3]

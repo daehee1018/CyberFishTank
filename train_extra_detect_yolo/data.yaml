@@ -1,0 +1,6 @@
+path: C:\Users\jsh14\Desktop\s\train_extra_detect_yolo
+train: images/train
+val: images/val
+
+names:
+  0: fish

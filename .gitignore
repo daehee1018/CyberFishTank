@@ -22,35 +22,29 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-*.db
-uploads/
-*.db-journal
-node_modules/
-node_modules/
-uploads/
-*.db
-*.db-journal
-ai_env/
-node_modules/
-uploads/
-*.db
-*.db-journal
 
-# 오늘 추가한 개인 카메라 AI 추론 서비스
+# 업로드/런타임 생성 파일
+uploads/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.db.*
+
+# 개인 카메라 AI 추론 서비스
+ai_env/
 fish_ai_env/
-__pycache__/
-*.pyc
 
 # DB 마이그레이션/작업 전 백업 스냅샷
 *.backup-*
 
-# SQLite 실행 중 생성되는 파일 및 로컬 DB 백업
-# (WAL/SHM 파일은 실행 중 계속 변경되므로 Git에 추가하면 안 됨)
-*.db-wal
-*.db-shm
-*.db.*
-ai_env/
-node_modules/
-uploads/
-*.db
-*.db-journal
+# Python / AI 학습 (testServer)
+.venv/
+.venv311/
+runs/
+fish_raw/
+fish_dataset/
+*.mp4
+*.cache
+__pycache__/
+*.pyc

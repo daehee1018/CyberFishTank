@@ -1,0 +1,32 @@
+Fish Detection / Tracking / Pose Metrics Report
+============================================================
+created_at: 2026-05-17 22:27:11
+record_seconds_requested: 600
+record_seconds_actual: 304.883647
+frames_processed: 2468
+avg_fps: 8.206488
+
+[1] Detection Metrics
+mAP50-95: N/A
+Recall: N/A
+note: DETECT_DATA_YAML not set or not found
+
+[2] Tracking Metrics
+IDF1: N/A
+MOTA: N/A
+note: GT_TRACK_CSV not set. pred_tracks.csv was saved for later scoring.
+
+[3] Pose Metrics
+OKS mAP: 0.977106
+AR: 1.000000
+
+[Saved Files]
+pred_tracks_csv: metrics_logs\run_20260517_222145\pred_tracks.csv
+pose_log_csv: metrics_logs\run_20260517_222145\pose_log.csv
+payload_jsonl: metrics_logs\run_20260517_222145\payload_log.jsonl
+report_txt: metrics_logs\run_20260517_222145\metrics_report.txt
+
+Notes
+- Detection mAP50-95 / Recall are computed only when DETECT_DATA_YAML is set.
+- Pose OKS mAP / AR are computed only when POSE_DATA_YAML is set.
+- Tracking IDF1 / MOTA require GT_TRACK_CSV. Without GT, prediction logs are saved for later scoring.
