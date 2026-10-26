@@ -10,9 +10,9 @@ const Database = require('better-sqlite3');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const { trackingPayload } = require('./tracking-payload.cjs');
-const { registerRigRoutes } = require('./fish-rig.cjs');
-const { DEFAULT_SENSOR_RANGES, createSensorSettingsStore, sensorAlertsForValues, isValidRgb } = require('./sensor-settings.cjs');
+const { trackingPayload } = require('./server/tracking-payload.cjs');
+const { registerRigRoutes } = require('./server/fish-rig.cjs');
+const { DEFAULT_SENSOR_RANGES, createSensorSettingsStore, sensorAlertsForValues, isValidRgb } = require('./server/sensor-settings.cjs');
 
 const app = express();
 

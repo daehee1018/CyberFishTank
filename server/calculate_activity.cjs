@@ -8,6 +8,7 @@ const Database = require('better-sqlite3');
 // DB 위치
 const DB_PATH = path.join(
   __dirname,
+  '..',
   'yolo.db'
 );
 

@@ -9,6 +9,7 @@ const Database = require('better-sqlite3');
 
 const dbPath = path.join(
   __dirname,
+  '..',
   'yolo.db'
 );
 
@@ -309,6 +310,9 @@ function importCsvFile(
   const filePath =
     path.join(
       __dirname,
+      '..',
+      'ai',
+      'growth_logs',
       fileName
     );
 
