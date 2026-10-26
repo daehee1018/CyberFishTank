@@ -48,3 +48,24 @@ fish_dataset/
 *.cache
 __pycache__/
 *.pyc
+
+# 백업 스냅샷(이중 패턴)
+*.bak-*
+
+# 구버전/중복 데이터셋 (v3_cylinder로 대체됨)
+/fish_dataset_v2/
+/fish_pose_dataset/
+/fish_pose_dataset_v2/
+/fish_raw copy/
+/fish_pose_flip_aug/
+/train_extra_detect_01/
+/train_extra_detect_02/
+/train_extra_detect_all/
+/train_extra_detect_yolo/
+/cylinder_pose_labeling/
+
+# 런타임 생성 데이터
+/database.sqlite
+/detections.jsonl
+/tracks.jsonl
+/features.csv
