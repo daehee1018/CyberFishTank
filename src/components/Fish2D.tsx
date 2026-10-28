@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppContext } from '../context/AppContext';
 import { useFishColorFilter } from './FishColorFilter';
 import { FishTrackingFilter, mapTrackingPoint, TRACKING_LABELS } from '../lib/fishTracking';
@@ -21,7 +22,7 @@ export const ACCESSORY_STYLE: Record<
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://ggnu.site';
 
-export function Fish2D(sample: FishTrackingSample) {
+export function Fish2D({ trackingStatusContainer, ...sample }: FishTrackingSample & { trackingStatusContainer?: HTMLElement | null }) {
   const { currentUser, fishColorHue, fishColorRgb, fishAccessory, fishAccessoryX, fishAccessoryY, activeGraphicDir, isWebSocketConnected } = useAppContext();
   const { colorFilter, colorFilterDefinition } = useFishColorFilter(fishColorRgb, fishColorHue);
   const [revision, setRevision] = useState(0);
@@ -122,9 +123,11 @@ export function Fish2D(sample: FishTrackingSample) {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  const trackingStatus = <div className="twin-tracking-status" data-status={status} role="status" aria-live="polite">{TRACKING_LABELS[status]}</div>;
+
   return <>
     {colorFilterDefinition}
-    <div className="twin-tracking-status" data-status={status} role="status" aria-live="polite">{TRACKING_LABELS[status]}</div>
+    {trackingStatusContainer === undefined ? trackingStatus : trackingStatusContainer && createPortal(trackingStatus, trackingStatusContainer)}
     <div ref={anchorRef} data-aquarium-fish className="twin-fish-anchor" style={{ left: '50%', top: '50%' }}>
       {warning && <span className="twin-fish-notice" role="status">⚠ 이상행동 신호 확인</span>}
       <div className="twin-fish-visual"><div ref={depthRef} className="twin-fish-depth"><div ref={orientationRef} className="twin-fish-orientation"><div ref={facingRef} className="twin-fish-facing">

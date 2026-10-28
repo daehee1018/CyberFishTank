@@ -58,7 +58,7 @@ const Dashboard: React.FC = () => {
   const landscapeOnly = isMobile && (navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches);
   const { elementRef: viewerRef, expanded, needsLandscape, toggleFullscreen } = useElementFullscreen({ landscapeOnly });
   const {
-    tankName, fishName, fishSpecies,
+    fishName, fishSpecies,
     isLiveMode,
     setIsLiveMode,
     fishData,
@@ -94,6 +94,7 @@ const Dashboard: React.FC = () => {
   const [myCameraError, setMyCameraError] = useState('');
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState('');
+  const [trackingStatusContainer, setTrackingStatusContainer] = useState<HTMLDivElement | null>(null);
 
   // ====================================================
   // 오염도 판정용 기준선 (이 어항의 전체 이력 평균/표준편차)
@@ -486,7 +487,7 @@ const Dashboard: React.FC = () => {
 
   // Share the actual controls and live renderer across two distinct page layouts.
   const twinPanel = (<section ref={viewerRef} className={`cft-panel cft-twin-panel${expanded ? ' is-expanded' : ''}${needsLandscape ? ' needs-landscape' : ''}`} role={expanded ? 'dialog' : undefined} aria-modal={expanded || undefined} aria-label={expanded ? '어항 전체화면' : undefined}>
-            <div className="cft-panel-heading"><div><h2>{expanded ? isLiveMode ? 'Live Render' : 'Digital Twin' : '실시간 디지털 트윈'}</h2>{isMobile && <span className="cft-badge is-success cft-mobile-live-badge">LIVE</span>}</div><div className="cft-camera-controls">
+            <div className="cft-panel-heading"><div><div className="cft-twin-title"><h2>{expanded ? isLiveMode ? 'Live Render' : 'Digital Twin' : '실시간 디지털 트윈'}</h2><div ref={setTrackingStatusContainer} className="cft-twin-tracking-status" /></div>{isMobile && <span className="cft-badge is-success cft-mobile-live-badge">LIVE</span>}</div><div className="cft-camera-controls">
               {!useMyCamera && availableCameras.length > 1 && <select aria-label="카메라 선택" value={selectedCameraId} onChange={event => setSelectedCameraId(event.target.value)}><option value="">기본 카메라</option>{availableCameras.map((camera, index) => <option key={camera.deviceId} value={camera.deviceId}>{camera.label || `카메라 ${index + 1}`}</option>)}</select>}
               <button className="cft-button cft-mode-button" onClick={() => setIsLiveMode(!isLiveMode)}>{isLiveMode ? 'Digital Twin' : 'Live Render'} <Icon name="arrow" /></button>
               <button className="cft-button" onClick={useMyCamera ? stopMyCamera : startMyCamera}><Icon name="camera" />{useMyCamera ? '카메라 끄기' : '카메라 켜기'}</button>
@@ -516,6 +517,7 @@ const Dashboard: React.FC = () => {
 
                     <Fish2D
                       {...fishData}
+                      trackingStatusContainer={trackingStatusContainer}
                     />
 
                   </Aquarium>
@@ -577,7 +579,7 @@ const Dashboard: React.FC = () => {
               <button type="button" className="cft-fullscreen-toggle" aria-label={expanded ? '전체화면 닫기' : '전체화면 보기'} title={expanded ? '전체화면 닫기 (Esc)' : '전체화면 보기'} aria-expanded={expanded} onClick={toggleFullscreen}><Icon name={expanded ? 'collapse' : 'expand'} /><span>{expanded ? '닫기' : '전체화면'}</span></button>
 
             </div>
-            <div className="cft-twin-footer">{isMobile ? <span><strong>{fishName}</strong><small>{fishSpecies === 'betta' ? '베타' : fishSpecies}</small></span> : <span><Icon name="camera" />{useMyCamera ? '내 카메라 연결됨 · 실시간 추적 중' : isLiveMode ? '실시간 카메라 화면' : '실시간 상태 · 디지털 어항'}</span>}{expanded && <span className="cft-fullscreen-status" role="status">{!online || !isWebSocketConnected ? '연결 복구 중 · 마지막 수신 상태' : isMobile ? '실시간 연결됨' : 'Esc 또는 닫기로 돌아가기'}</span>}</div>
+            {(isMobile || expanded) && <div className="cft-twin-footer">{isMobile && <span><strong>{fishName}</strong><small>{fishSpecies === 'betta' ? '베타' : fishSpecies}</small></span>}{expanded && <span className="cft-fullscreen-status" role="status">{!online || !isWebSocketConnected ? '연결 복구 중 · 마지막 수신 상태' : isMobile ? '실시간 연결됨' : 'Esc 또는 닫기로 돌아가기'}</span>}</div>}
             {needsLandscape && <div className="cft-landscape-guide" role="status"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="22" y="14" width="20" height="36" rx="4" /><path d="M27 19h10M30 44h4M11 27a22 22 0 0 1 38-12m-1-8 2 9-9-1M53 37a22 22 0 0 1-38 12m1 8-2-9 9 1" /></svg><h3>가로로 돌려주세요</h3><p>어항 전체화면은 가로 방향으로 볼 수 있어요.</p></div>}
           </section>);
   const statsPanel = (<div className="cft-stat-grid">
@@ -595,7 +597,7 @@ const Dashboard: React.FC = () => {
   const feederPanel = (<section className="cft-panel cft-feeder-panel">
             <div className="cft-panel-heading"><h2>자동 급식기</h2><span className={`cft-badge ${feederStatus?.online ? 'is-success' : 'is-neutral'}`}>{feederStatus?.online ? '온라인' : '오프라인'}</span></div>
             <p className="cft-caption cft-feeder-connection">{feederStatus?.online ? 'RP2040 연결됨' : 'RP2040 연결 대기'}</p>
-            <div className="cft-feeder-stats"><div><span>급여 횟수</span><strong>{feederStatus?.feed_count ?? 0} / 2</strong></div><div><span>현재 위치</span><strong>{feederStatus?.angle ?? 0}°</strong></div></div>
+            <div className="cft-feeder-stats"><div><span>급여 가능 횟수</span><strong>{feederStatus?.feed_count ?? 0} / 2</strong></div></div>
             <div className={`cft-feeder-message ${(feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2) ? 'is-warning' : ''}`}>{feederStatus?.last_command_status === 'queued' ? '급여 명령 전송 대기 중...' : (feederStatus?.locked || (feederStatus?.feed_count ?? 0) >= 2) ? '오늘 2회 급여를 완료했어요. 다시 사용하려면 초기화해주세요.' : '물고기에게 먹이를 줄 수 있어요.'}</div>
             {formatLastFeedTime(feederStatus?.last_feed_at) && <p className="cft-caption cft-feeder-last-feed">마지막 급여: {formatLastFeedTime(feederStatus?.last_feed_at)}</p>}
             {(!online || !feederAvailable) && <p className="cft-caption">서버 연결과 급식기 상태를 확인한 후 조작할 수 있어요.</p>}
@@ -609,7 +611,7 @@ const Dashboard: React.FC = () => {
 
   if (isMobile) return (
     <div className="cft-mobile-dashboard">
-      <PageHeading title="내 어항 대시보드" description={tankName} />
+      <PageHeading title="내 어항 대시보드" />
       {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
       {twinPanel}
       {feederPanel}
@@ -620,7 +622,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="cft-dashboard-page">
-      <PageHeading title="내 어항 대시보드" description="물고기와 어항의 상태를 한눈에 확인하세요." />
+      <PageHeading title="내 어항 대시보드" />
       {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
       <div className="cft-dashboard-grid">
         <div className="cft-dashboard-main">{twinPanel}{statsPanel}</div>

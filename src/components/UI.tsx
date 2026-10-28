@@ -23,8 +23,8 @@ export function Icon({ name, className = '' }: { name: IconName; className?: str
   return <svg className={`cft-icon ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-export function PageHeading({ title, description }: { title: string; description: string }) {
-  return <div className="cft-page-heading"><h1>{title}</h1><p>{description}</p></div>;
+export function PageHeading({ title, description }: { title: string; description?: string }) {
+  return <div className="cft-page-heading"><h1>{title}</h1>{description && <p>{description}</p>}</div>;
 }
 
 export function AquariumIllustration() {

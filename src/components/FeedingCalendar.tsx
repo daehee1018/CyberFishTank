@@ -64,7 +64,6 @@ export default function FeedingCalendar({ apiBase, lastFeedAt }: FeedingCalendar
   const weekCount = Math.ceil((firstWeekday + daysInMonth) / 7);
   const days = history?.month === month ? history.days : [];
   const counts = new Map(days.map((day) => [day.date, day.count]));
-  const totalFeeds = days.reduce((sum, day) => sum + day.count, 0);
 
   const moveMonth = (offset: number) => {
     setMonth((current) => {
@@ -144,11 +143,7 @@ export default function FeedingCalendar({ apiBase, lastFeedAt }: FeedingCalendar
             <button type="button" onClick={() => setRetry((value) => value + 1)} className="text-teal-700 underline">다시 불러오기</button>
           </div>
         ) : (
-          <>
-            <p><span className="font-semibold text-teal-700">✓ 급여 완료·횟수</span> · 테두리는 오늘</p>
-            <p>선택한 달 {days.length}일 · 총 {totalFeeds}회</p>
-            <p className="text-[10px]">성공한 급여만 표시 · 한국 시간</p>
-          </>
+          <p className="font-semibold text-teal-700">✓ 급여 완료·횟수</p>
         )}
       </div>
     </section>

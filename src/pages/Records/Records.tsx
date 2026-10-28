@@ -3462,7 +3462,7 @@ const activityChartData =
 
   return (
     <div className="cft-records-page">
-      <PageHeading title="어항 기록" description="변화를 살펴보고 더 건강한 어항을 관리하세요." />
+      <PageHeading title="어항 기록" />
       <nav className="cft-tabs cft-record-tabs" aria-label="기록 종류">{recordTabs.map(tab => <button key={tab} aria-pressed={activeRecordTab === tab} className={activeRecordTab === tab ? 'is-active' : ''} onClick={() => { setActiveRecordTab(tab); if ((tab === '성장 그래프' || tab === '활동량 그래프') && activeRange === '1일') setActiveRange('1주'); }}>{tab.replace(' 그래프', '')}</button>)}</nav>
       <div className="cft-records-content">{renderRecordMainContent()}</div>
     </div>

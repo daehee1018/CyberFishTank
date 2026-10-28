@@ -343,7 +343,7 @@ const PersonalSettings: React.FC = () => {
 
   return (
     <div className="cft-customize-page">
-      <PageHeading title="나만의 어항 꾸미기" description="물고기와 어항에 나만의 취향을 더해보세요." />
+      <PageHeading title="나만의 어항 꾸미기" />
       {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
       <nav className="cft-tabs" aria-label="꾸미기 메뉴">{['어항 커스터마이징', '물고기 그래픽', '센서 연동'].map((tab, index) => <button key={tab} aria-pressed={activeTab === tab} className={activeTab === tab ? 'is-active' : ''} onClick={() => setActiveTab(tab)}>{isMobile ? ['어항 꾸미기', '물고기', '센서 연동'][index] : tab}</button>)}</nav>
       <div className={`cft-customize-grid ${activeTab === '물고기 그래픽' ? 'is-graphics' : activeTab === '센서 연동' ? 'is-sensor' : ''}`}>

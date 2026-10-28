@@ -22,7 +22,7 @@ const Settings: React.FC = () => {
 
   return (
     <div className="cft-settings-page">
-      <PageHeading title="설정" description="어항 정보와 계정 환경을 관리하세요." />
+      <PageHeading title="설정" />
       {controlNotice && <div className="cft-notice" role="status">{controlNotice}</div>}
       <div className="cft-settings-grid">
         <section className="cft-panel" id="tank-information"><div className="cft-panel-heading"><h2>어항 및 물고기 정보</h2></div>

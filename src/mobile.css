@@ -58,6 +58,7 @@
   .cft-mobile .cft-twin-panel:not(.is-expanded) .cft-panel-heading > div:first-child { flex-basis: 100%; }
   .cft-mobile .cft-twin-panel h2 { font-size: 16px; }
   .cft-mobile-live-badge { margin-top: 7px; padding: 3px 12px; font-size: 10px; }
+  .cft-mobile .cft-twin-tracking-status .twin-tracking-status { background: var(--cft-selected, #e4f4f2); color: var(--cft-accent, #07868b); }
   .cft-mobile .cft-camera-controls { width: 100%; max-width: none; gap: 6px; }
   .cft-mobile .cft-camera-controls .cft-button { min-height: 44px; padding: 8px 12px; white-space: nowrap; }
   .cft-mobile .cft-camera-controls .cft-icon { display: none; }
@@ -78,6 +79,7 @@
   .cft-mobile .cft-feeder-message { margin: 12px 0; padding: 10px 12px; font-size: 12px; line-height: 1.7; }
   .cft-mobile .cft-feeder-last-feed { margin: 10px 0; }
   .cft-mobile .cft-feeder-actions { gap: 10px; margin-top: 12px; }
+  .cft-mobile .cft-feeder-actions .cft-button { min-height: 52px; padding: 14px 20px; font-size: 14px; font-weight: 600; }
   .cft-mobile .cft-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
   .cft-mobile .cft-stat-card { padding: 12px 14px; border-radius: 16px; }
   .cft-mobile .cft-stat-label { gap: 6px; font-size: 12px; }
